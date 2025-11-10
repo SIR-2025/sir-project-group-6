@@ -1,1 +1,1 @@
-Dependencies go here
+google-generativeai==0.8.5

@@ -35,3 +35,7 @@ conf/google/*.json
 
 # Ignore venv
 venv
+
+# Ignore api keys
+api_key_joos.py
+api_key_marit.py

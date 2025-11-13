@@ -59,7 +59,7 @@ class NaoGeminiDemo(SICApplication):
         
         # Demo-specific initialization
         self.nao_ip = "10.0.0.242"  # TODO: Replace with your NAO's IP address
-        self.gemini_keyfile_path = abspath(join("..", "config", "api_key_marit.json"))
+        self.gemini_keyfile_path = abspath(join("..", "config", "api_key_joos.json"))
         self.nao = None
         self.gemini = None
         self.session_id = np.random.randint(10000)
@@ -71,25 +71,67 @@ class NaoGeminiDemo(SICApplication):
         self.recognizer = None
         self.tts_engine = None
         self.setup()
-    
+
+    #--------OLD ASK GEMINI FUNCTION-------------    
+    # def ask_gemini(self, message):
+    #     """
+    #     Callback function for Dialogflow CX recognition results.
+        
+    #     Args:
+    #         message: The Dialogflow CX recognition result message.
+        
+    #     Returns:
+    #         None
+    #     """
+    #     if message:
+    #         #response = genai.generate_text(self.gemini_model, message)
+    #         if hasattr(message, 'recognition_results') and message.recognition_results:
+    #             rr = message.recognition_result
+    #             if hasattr(rr, 'is_final') and rr.is_final:
+    #                 if hasattr(rr, 'transcript'):
+    #                     self.logger.info("Transcript: {transcript}".format(transcript=rr.transcript))
+    #--------------------END OLD--------------------------
+
+    # ---------NEW ASK GEMINI FUNCION---------------
     def ask_gemini(self, message):
         """
-        Callback function for Dialogflow CX recognition results.
-        
-        Args:
-            message: The Dialogflow CX recognition result message.
-        
-        Returns:
-            None
+        Dialogflow CX recognition callback: when a final transcript is available,
+        send it to Gemini, log and return the reply (optionally trigger TTS).
         """
-        if message:
-            #response = genai.generate_text(self.gemini_model, message)
-            if hasattr(message, 'recognition_results') and message.recognition_results:
-                rr = message.recognition_result
-                if hasattr(rr, 'is_final') and rr.is_final:
-                    if hasattr(rr, 'transcript'):
-                        self.logger.info("Transcript: {transcript}".format(transcript=rr.transcript))
-    
+        if not message:
+            return None
+
+        # Use the correct attribute provided by your Dialogflow wrapper:
+        rr = getattr(message, "recognition_result", None)
+        if not rr or not getattr(rr, "is_final", False):
+            return None
+
+        transcript = getattr(rr, "transcript", None)
+        if not transcript:
+            return None
+
+        self.logger.info("Transcript: {}".format(transcript))
+
+        # Send transcript to Gemini and return reply
+        try:
+            # Create model wrapper (assumes genai.configure was already called)
+            model = genai.GenerativeModel(self.gemini_model)
+            response = model.generate_content(transcript)
+            reply = getattr(response, "text", str(response))
+            self.logger.info("Gemini reply: {}".format(reply))
+
+            # Optional if we want to speak the reply with NAO:
+            # try:
+            #     self.nao.tts.request(NaoqiTextToSpeechRequest(reply))
+            # except Exception as e:
+            #     self.logger.warning("TTS failed: {}".format(e))
+
+            return reply
+        except Exception as e:
+            self.logger.error("Gemini call failed: {}".format(e))
+            return None
+    #----------END NEW------------
+
     def setup(self):
         """Initialize and configure NAO robot and Dialogflow CX."""
         self.logger.info("Initializing NAO robot...")

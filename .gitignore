@@ -38,4 +38,4 @@ venv
 
 # Ignore api keys
 api_key_joos.json
-api_key_marit.json
+api_key_marit.txt

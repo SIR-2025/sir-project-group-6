@@ -55,7 +55,7 @@ class GeminiDemo(SICApplication):
         self.desktop = None
         self.desktop_mic = None
         self.gemini_agent = None
-        self.gemini_keyfile_path = abspath(join("..", "config", "api_key_marit.json"))
+        self.gemini_keyfile_path = abspath(join("..", "config", "api_key_marit.txt"))
 
 
         self.set_log_level(sic_logging.INFO)
@@ -69,44 +69,36 @@ class GeminiDemo(SICApplication):
         self.tts_engine = None
         self.setup()
     
-    def on_recognition(self, message):
-        """
-        Dialogflow CX recognition callback: when a final transcript is available,
-        send it to Gemini, log and return the reply (optionally trigger TTS).
-        """
+    def ask_gemini(self, message):
+        """Take input text, send it to Gemini, return (and speak) the reply."""
         if not message:
             return None
 
-        # Use the correct attribute provided by your Dialogflow wrapper:
-        rr = getattr(message, "recognition_result", None)
-        if not rr or not getattr(rr, "is_final", False):
+        # Extract text content safely
+        text = message if isinstance(message, str) else getattr(message, "text", "") or getattr(message, "transcript", "") or str(message)
+        if not text.strip():
             return None
 
-        transcript = getattr(rr, "transcript", None)
-        if not transcript:
-            return None
-
-        self.logger.info("Transcript: {}".format(transcript))
-
-        # Send transcript to Gemini and return reply
         try:
-            # Create model wrapper (assumes genai.configure was already called)
-            model = genai.GenerativeModel(self.gemini_model)
-            response = model.generate_content(transcript)
-            reply = getattr(response, "text", str(response))
-            self.logger.info("Gemini reply: {}".format(reply))
+            # Use the model configured on the object, or fall back
+            model_name = getattr(self, "gemini_model", "gemini-2.5-flash")
+            model = genai.GenerativeModel(model_name)
+            response = model.generate_content(text)
 
-            # Optional if we want to speak the reply with NAO:
-            # try:
-            #     self.nao.tts.request(NaoqiTextToSpeechRequest(reply))
-            # except Exception as e:
-            #     self.logger.warning("TTS failed: {}".format(e))
-
-            return reply
+            reply = response.text.strip() if hasattr(response, "text") else str(response)
         except Exception as e:
-            self.logger.error("Gemini call failed: {}".format(e))
-            return None
-        #----------END NEW------------
+            print(f"[Gemini Error] {e}")
+            reply = None
+
+        # Make Nao speak (optional)
+        if reply and getattr(self, "nao", None):
+            try:
+                self.nao.tts.say(reply)
+            except Exception as e:
+                print(f"[Nao Speech Error] {e}")
+
+        return reply
+
 
     def setup(self):
         """Initialize and configure the desktop microphone and Conversational Agents service."""
@@ -129,9 +121,11 @@ class GeminiDemo(SICApplication):
 
         self.logger.info("Initializing Conversational Agents (Gemini)...")
         
-        # Load the key json file
         with open(self.gemini_keyfile_path) as f:
-            keyfile_json = json.load(f)
+            api_key = f.read().strip()
+
+        # Configure Gemini with the key
+        genai.configure(api_key=api_key)
 
         self.gemini_model = "gemini-2.5-flash"
         
@@ -203,7 +197,7 @@ class GeminiDemo(SICApplication):
 
                 # Send to Gemini
                 self.logger.info("Sending to Gemini: {}".format(user_text))
-                gemini_reply = self.on_recognition(user_text)
+                gemini_reply = self.ask_gemini(user_text)
                 self.logger.info("Gemini reply: {}".format(gemini_reply))
 
                 # Speak reply on laptop speaker via pyttsx3

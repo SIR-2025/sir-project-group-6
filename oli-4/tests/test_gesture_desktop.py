@@ -6,15 +6,6 @@ from sic_framework.core import sic_logging
 # Import the device(s) we will be using
 from sic_framework.devices.desktop import Desktop
 
-# Import the service(s) we will be using
-from sic_framework.services.dialogflow_cx.dialogflow_cx import (
-    DialogflowCX,
-    DialogflowCXConf,
-    DetectIntentRequest,
-    QueryResult,
-    RecognitionResult,
-)
-
 # Import libraries necessary for the demo
 import json
 from os.path import abspath, join

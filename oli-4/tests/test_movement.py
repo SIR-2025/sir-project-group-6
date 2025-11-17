@@ -32,7 +32,7 @@ class NaoProxemicsDemo(SICApplication):
         self.nao_ip = "10.0.0.242"
         self.nao = None
 
-        self.valid_inputs = ["close", "far", "good distance"]
+        self.valid_inputs = ["close", "far", "good distance","left","right","spin left","spin right"]
 
         self.set_log_level(sic_logging.INFO)
         self.setup()
@@ -78,7 +78,7 @@ class NaoProxemicsDemo(SICApplication):
             )
         
         elif category == "spin left":
-            #maybe flip values again because documentation be sacmming. 
+            #maybe flip values again because documentation be scamming. 
             return lambda: self.nao.motion.request(
                 NaoqiMoveRequest(0.0, 0, 0.3)
             )
@@ -122,6 +122,6 @@ class NaoProxemicsDemo(SICApplication):
             self.shutdown()
 
 
-if __name__ == "__main__":
+if __name__ == "__main__": 
     demo = NaoProxemicsDemo()
     demo.run()

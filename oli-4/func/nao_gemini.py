@@ -5,17 +5,12 @@ from sic_framework.core import sic_logging
 # Import the device(s) we will be using
 from sic_framework.devices import Nao
 from sic_framework.devices.nao import NaoqiTextToSpeechRequest
-from sic_framework.devices.common_naoqi.naoqi_motion import NaoqiAnimationRequest, NaoPostureRequest
 
 import google.generativeai as genai
 import speech_recognition as sr
-import pyttsx3
-
 
 # Import libraries necessary for the demo
 from os.path import abspath, join
-import numpy as np
-
 
 class NaoGeminiDemo(SICApplication):
     """
@@ -29,40 +24,36 @@ class NaoGeminiDemo(SICApplication):
        How to get a key? See https://social-ai-vu.github.io/social-interaction-cloud/external_apis/google_cloud.html
        Save the key in conf/google/google-key.json
 
-    2. You need a trained Dialogflow CX agent:
-       - Create an agent at https://dialogflow.cloud.google.com/cx/
-       - Add intents with training phrases
-       - Train the agent
-       - Note the agent ID and location
-
-    3. The Dialogflow CX service needs to be running:
-       - pip install social-interaction-cloud[dialogflow-cx]
-       - run-dialogflow-cx
-
-    Note: This uses Dialogflow CX (v3), which is different from Dialogflow ES (v2).
+    2. The Conversational Agents service needs to be running:
+       - pip install google-generativeai
+       - pip install SpeechRecognition
+       - You may need to turn of your firewall. 
     """
     
     def __init__(self):
+        """
+            Initialises NAO robot connection, Gemini configuration, microphone and TTS.
+        """
         # Call parent constructor (handles singleton initialization)
         super(NaoGeminiDemo, self).__init__()
         
-        # Demo-specific initialization
+        # Nao initialization
         self.nao_ip = "10.0.0.242"  # TODO: Replace with your NAO's IP address
         self.gemini_keyfile_path = abspath(join("..", "config", "api_key.txt"))
         self.nao = None
         self.gemini = None
-        self.session_id = np.random.randint(10000)
 
         self.set_log_level(sic_logging.INFO)
         
-        # Log files will only be written if set_log_file is called. Must be a valid full path to a directory.
-        # self.set_log_file("/Users/apple/Desktop/SAIL/SIC_Development/sic_applications/demos/nao/logs")
+        # Test-specific initialization
         self.recognizer = None
         self.tts_engine = None
         self.setup()
 
     def ask_gemini(self, message):
-        """Take input text, send it to Gemini, return (and speak) the reply."""
+        """
+            Takes the input text, sends it to gemini and gives a reply.
+        """
         if not message:
             return None
 
@@ -82,6 +73,7 @@ class NaoGeminiDemo(SICApplication):
 
             reply = response.text.strip() if hasattr(response, "text") else str(response)
         
+        # Handle exceptions
         except Exception as e:
             self.logger.error(f"[Gemini Error] {e}")
             reply = None
@@ -89,10 +81,13 @@ class NaoGeminiDemo(SICApplication):
         return reply
 
     def speak(self, text):
-        """Route speech output to NAO if connected, otherwise laptop TTS or print."""
+        """
+            Route speech output to NAO if connected, otherwise laptop TTS.        
+        """
         if not text:
             return
         
+        # Try to make NAO speak first
         if self.nao:
             try:
                 self.logger.info("NAO speaking: {}".format(text))
@@ -101,51 +96,32 @@ class NaoGeminiDemo(SICApplication):
             except Exception as e:
                 self.logger.warning("NAO TTS failed: {}".format(e))
         
-        if self.tts_engine:
-            try:
-                self.logger.info("Laptop speaking: {}".format(text))
-                self.tts_engine.say(text)
-                self.tts_engine.runAndWait()
-                return
-            except Exception as e:
-                self.logger.warning("Local TTS failed: {}".format(e))
-
-        # Fallback: print to console        
-        print("TTS:", text)
-
     def setup(self):
-        """Initialize and configure NAO robot and Dialogflow CX."""
-        self.logger.info("Initializing NAO robot...")
+        """
+            Initialise and configure NAO robot and Gemini.
+        """
+
+        self.logger.info("Initialising NAO robot...")
        
-        # Try to initialize NAO; if it fails continue using laptop mic/tts
+        # Try to initialise NAO
         try:
             self.nao = Nao(ip=self.nao_ip)
-            self.logger.info("NAO device initialized at {}".format(self.nao_ip))
+            self.logger.info("NAO device initialised at {}".format(self.nao_ip))
         except Exception as e:
-            self.logger.warning("Could not initialize NAO device (continuing without robot): {}".format(e))
+            self.logger.warning("Could not initialise NAO device (continuing without robot): {}".format(e))
             self.nao = None
 
-        # Initialize laptop microphone recognizer
+        # Initialise laptop microphone recogniser if NAO microphone fails
         try:
             self.recognizer = sr.Recognizer()
-            # optional: adjust for ambient noise
             with sr.Microphone() as mic:
                 self.recognizer.adjust_for_ambient_noise(mic, duration=0.5)
-            self.logger.info("Laptop microphone (SpeechRecognition) initialized.")
+            self.logger.info("Laptop microphone (SpeechRecognition) initialised.")
         except Exception as e:
-            self.logger.warning("Could not initialize laptop microphone: {}".format(e))
+            self.logger.warning("Could not initialise laptop microphone: {}".format(e))
             self.recognizer = None
-        
-        #################### Do we need this??
-        """# Initialize laptop TTS (pyttsx3) as fallback
-        try:
-            self.tts_engine = pyttsx3.init()
-            self.logger.info("Laptop TTS (pyttsx3) initialized.")
-        except Exception as e:
-            self.logger.warning("Could not initialize laptop TTS: {}".format(e))
-            self.tts_engine = None"""
 
-        self.logger.info("Initializing Gemini...")
+        self.logger.info("Initialising Gemini...")
         
         with open(self.gemini_keyfile_path) as f:
             api_key = f.read().strip()
@@ -154,21 +130,23 @@ class NaoGeminiDemo(SICApplication):
 
         # Configure Gemini with the key
         genai.configure(api_key=api_key)
-        self.gemini_model = "gemini-2.5-flash"
         
         self.logger.info("Gemini configured successfully")
     
     def run(self):
-        """Main application loop."""
+        """
+            Run the main application loop.
+        """
         try:
-            # Demo starts — use speak() so it works with or without NAO
-            self.speak("What's up")
+            # Speak a startup message
+            self.speak("Ready whenever you are!")
             self.logger.info(" -- Ready -- ")
             
             while not self.shutdown_event.is_set():
                 self.logger.info(" ----- Your turn to talk!")
                 user_text = None
                 
+                # Listen for user input
                 if self.recognizer:
                     try:
                         with sr.Microphone() as mic:
@@ -176,6 +154,7 @@ class NaoGeminiDemo(SICApplication):
                             audio = self.recognizer.listen(mic, timeout=8, phrase_time_limit=10)
                         user_text = self.recognizer.recognize_google(audio)
                         self.logger.info("User: {}".format(user_text))
+                    # Raise exceptions for timeout and unrecognised speech
                     except sr.WaitTimeoutError:
                         self.logger.info("Listening timed out, no speech detected.")
                     except sr.UnknownValueError:
@@ -183,28 +162,28 @@ class NaoGeminiDemo(SICApplication):
                     except Exception as e:
                         self.logger.warning("Laptop mic error: {}".format(e))
 
+                # If no speech recognised, fallback to text input
                 if not user_text:
                     try:
                         user_text = input("Type here: ").strip()
                     except EOFError:
                         self.logger.info("Input stream closed, exiting.")
                         break
-
                 if not user_text:
                     self.logger.info("No input received, continuing...")
                     continue
 
                 # Send to Gemini
-                #self.logger.info("Sending to Gemini: {}".format(user_text))
                 gemini_reply = self.ask_gemini(user_text)
 
-                # Speak the Gemini reply (NAO if connected, otherwise laptop)
+                # Speak the Gemini reply
                 if gemini_reply:
                     self.logger.info("Gemini: {}".format(gemini_reply))
                     self.speak(gemini_reply)
                 else:
                     self.logger.warning("Gemini returned no reply")
 
+        # Stop on keyboard interrupt
         except KeyboardInterrupt:
             self.logger.info("Demo interrupted by user")
         except Exception as e:

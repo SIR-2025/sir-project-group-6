@@ -38,5 +38,5 @@ venv
 venv_sic
 
 # Ignore api keys
-api_key_joos.py
-api_key_marit.py
+api_key_joos.json
+api_key.txt

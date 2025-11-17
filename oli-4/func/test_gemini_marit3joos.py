@@ -94,51 +94,68 @@ class NaoGeminiDemo(SICApplication):
 
     # ---------NEW ASK GEMINI FUNCION---------------
     def ask_gemini(self, message):
-        """
-        Dialogflow CX recognition callback: when a final transcript is available,
-        send it to Gemini, log and return the reply (optionally trigger TTS).
-        """
-        if not message:
-            return None
+        """Accept either a Dialogflow recognition message or a plain transcript string.
+        Sends the transcript to Gemini and returns the assistant reply string."""
+        # extract transcript from either a string or Dialogflow-style message
+        if isinstance(message, str):
+            transcript = message.strip()
+        else:
+            if not message:
+                return None
+            rr = getattr(message, "recognition_result", None)
+            if not rr or not getattr(rr, "is_final", False):
+                return None
+            transcript = getattr(rr, "transcript", None)
 
-        # Use the correct attribute provided by your Dialogflow wrapper:
-        rr = getattr(message, "recognition_result", None)
-        if not rr or not getattr(rr, "is_final", False):
-            return None
-
-        transcript = getattr(rr, "transcript", None)
         if not transcript:
             return None
 
         self.logger.info("Transcript: {}".format(transcript))
 
-        # Send transcript to Gemini and return reply
         try:
-            # Create model wrapper (assumes genai.configure was already called)
-            model = genai.GenerativeModel(self.gemini_model)
+            model_name = getattr(self, "gemini_model", "gemini-2.5-flash")
+            model = genai.GenerativeModel(model_name)
             response = model.generate_content(transcript)
             reply = getattr(response, "text", str(response))
             self.logger.info("Gemini reply: {}".format(reply))
-
-            # Optional if we want to speak the reply with NAO:
-            # try:
-            #     self.nao.tts.request(NaoqiTextToSpeechRequest(reply))
-            # except Exception as e:
-            #     self.logger.warning("TTS failed: {}".format(e))
-
             return reply
         except Exception as e:
             self.logger.error("Gemini call failed: {}".format(e))
             return None
     #----------END NEW------------
 
+    def speak(self, text):
+        """Route speech output to NAO if connected, otherwise laptop TTS or print."""
+        if not text:
+            return
+        if getattr(self, "nao", None):
+            try:
+                self.nao.tts.request(NaoqiTextToSpeechRequest(text))
+                return
+            except Exception as e:
+                self.logger.warning("NAO TTS failed, falling back to laptop TTS: {}".format(e))
+        if getattr(self, "tts_engine", None):
+            try:
+                self.tts_engine.say(text)
+                self.tts_engine.runAndWait()
+                return
+            except Exception as e:
+                self.logger.warning("Local TTS failed: {}".format(e))
+        print("TTS:", text)
+
     def setup(self):
         """Initialize and configure NAO robot and Dialogflow CX."""
         self.logger.info("Initializing NAO robot...")
-        
-        # Initialize NAO
-        self.nao = Nao(ip=self.nao_ip)
-        nao_mic = self.nao.mic
+       
+        # Try to initialize NAO; if it fails continue using laptop mic/tts
+        nao_mic = None
+        try:
+            self.nao = Nao(ip=self.nao_ip)
+            nao_mic = self.nao.mic
+            self.logger.info("NAO device initialized at {}".format(self.nao_ip))
+        except Exception as e:
+            self.logger.warning("Could not initialize NAO device (continuing without robot): {}".format(e))
+            self.nao = None
 
         # Initialize laptop microphone recognizer
         try:
@@ -151,12 +168,28 @@ class NaoGeminiDemo(SICApplication):
             self.logger.warning("Could not initialize laptop microphone: {}".format(e))
             self.recognizer = None
         
+        # Initialize laptop TTS (pyttsx3) as fallback
+        try:
+            self.tts_engine = pyttsx3.init()
+            self.logger.info("Laptop TTS (pyttsx3) initialized.")
+        except Exception as e:
+            self.logger.warning("Could not initialize laptop TTS: {}".format(e))
+            self.tts_engine = None
 
         self.logger.info("Initializing Gemini CX...")
         
         # Load the key json file
         with open(self.gemini_keyfile_path) as f:
             keyfile_json = json.load(f)
+
+        # configure gemini API key if present in the json (expects {"api_key": "<KEY>"})
+        api_key = keyfile_json.get("api_key") if isinstance(keyfile_json, dict) else None
+        if api_key:
+            try:
+                genai.configure(api_key=api_key)
+                self.logger.info("Configured Gemini API key from {}".format(self.gemini_keyfile_path))
+            except Exception as e:
+                self.logger.warning("Failed to configure Gemini API key: {}".format(e))
 
         self.gemini_model = "gemini-2.5-flash"  
         
@@ -185,8 +218,8 @@ class NaoGeminiDemo(SICApplication):
     def run(self):
         """Main application loop."""
         try:
-            # Demo starts
-            self.nao.tts.request(NaoqiTextToSpeechRequest("What's up bitches"))
+            # Demo starts — use speak() so it works with or without NAO
+            self.speak("What's up")
             self.logger.info(" -- Ready -- ")
             
             while not self.shutdown_event.is_set():
@@ -224,12 +257,11 @@ class NaoGeminiDemo(SICApplication):
                 gemini_reply = self.ask_gemini(user_text)
                 self.logger.info("Gemini reply: {}".format(gemini_reply))
 
-                # Speak reply on laptop speaker via pyttsx3
-                if self.tts_engine:
-                    try:
-                        self.nao.tts.request(NaoqiTextToSpeechRequest(gemini_reply))
-                    except Exception as e:
-                        self.logger.warning("Local TTS playback failed: {}".format(e))
+                # Speak the Gemini reply (NAO if connected, otherwise laptop)
+                if gemini_reply is None:
+                    self.logger.warning("Gemini returned no reply")
+                else:
+                    self.speak(gemini_reply)
 
                 """# Request intent detection with the current session
                 reply = self.gemini.request(DetectIntentRequest(self.session_id))

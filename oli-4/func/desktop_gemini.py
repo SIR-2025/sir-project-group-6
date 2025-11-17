@@ -19,20 +19,17 @@ import speech_recognition as sr
 
 class GeminiDemo(SICApplication):
     """
-    Dialogflow CX (Conversational Agents) demo application using Desktop microphone for intent detection.
+    This is a conversational agent using Google's Gemini via the the Nao microphone or desktop microphone.
 
     IMPORTANT:
-    1. You need to obtain your own keyfile.json from Google Cloud and place it in a location that the code can load.
-       How to get a key? See https://social-ai-vu.github.io/social-interaction-cloud/external_apis/google_cloud.html
-       Save the key in conf/google/google-key.json
-
-    2. You need to create a Dialogflow CX agent and note:
-       - Your agent ID (found in agent settings)
-       - Your agent location (e.g., "global" or "us-central1")
+    1. You need to obtain your own keyfile from Google AI Studio and place it in a location that the code can load.
+       How to get a key? See https://aistudio.google.com/api-keys
+       Save the key in config/api_key.txt
 
     3. The Conversational Agents service needs to be running:
-       - pip install social-interaction-cloud[dialogflow-cx]
-       - run-dialogflow-cx
+       - pip install google-generativeai
+       - pip install SpeechRecognition
+       - You may need to turn of your firewall. 
 
     Note: This uses the newer Dialogflow CX API (v3), which is different from the older Dialogflow ES (v2).
     """

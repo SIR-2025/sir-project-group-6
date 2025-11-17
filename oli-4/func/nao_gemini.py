@@ -7,22 +7,12 @@ from sic_framework.devices import Nao
 from sic_framework.devices.nao import NaoqiTextToSpeechRequest
 from sic_framework.devices.common_naoqi.naoqi_motion import NaoqiAnimationRequest, NaoPostureRequest
 
-# Import the service(s) we will be using
-"""from sic_framework.services.dialogflow_cx.dialogflow_cx import (
-    DialogflowCX,
-    DialogflowCXConf,
-    DetectIntentRequest,
-    QueryResult,
-    RecognitionResult,
-)"""
-
 import google.generativeai as genai
 import speech_recognition as sr
 import pyttsx3
 
 
 # Import libraries necessary for the demo
-import json
 from os.path import abspath, join
 import numpy as np
 
@@ -58,7 +48,7 @@ class NaoGeminiDemo(SICApplication):
         
         # Demo-specific initialization
         self.nao_ip = "10.0.0.242"  # TODO: Replace with your NAO's IP address
-        self.gemini_keyfile_path = abspath(join("..", "config", "api_key_marit.txt"))
+        self.gemini_keyfile_path = abspath(join("..", "config", "api_key.txt"))
         self.nao = None
         self.gemini = None
         self.session_id = np.random.randint(10000)
@@ -100,7 +90,6 @@ class NaoGeminiDemo(SICApplication):
 
     def speak(self, text):
         """Route speech output to NAO if connected, otherwise laptop TTS or print."""
-
         if not text:
             return
         

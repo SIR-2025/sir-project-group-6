@@ -51,13 +51,13 @@ class NaoProxemicsDemo(SICApplication):
         if category == "close":
             #30 cm. X is to go forward and backward, Y is side to side, Z is turn around (left is positive)
             return lambda: self.nao.motion.request(
-                NaoqiMoveToRequest(0.30, 0.0, 0.0)
+                NaoqiMoveToRequest(-0.30, 0.0, 0.0)
             )
 
         elif category == "far":
             #0-1 is 1 meter, maar hij ziet niet echt de depth
             return lambda: self.nao.motion.request(
-                NaoqiMoveToRequest(-0.30, 0.0, 0.0)
+                NaoqiMoveToRequest(0.30, 0.0, 0.0)
             )
 
         elif category == "good distance":
@@ -65,7 +65,30 @@ class NaoProxemicsDemo(SICApplication):
             return lambda: self.nao.motion.request(
                 NaoqiMoveRequest(0.0, 0.0, 0.0)
             )
+        
+        elif category == "right":
+            #naar rechts? (misschien andersom met + en -)
+            return lambda: self.nao.motion.request(
+                NaoqiMoveRequest(0.0, 0.3, 0.0)
+            )
+        elif category == "left":
+            #naar links?
+            return lambda: self.nao.motion.request(
+                NaoqiMoveRequest(0.0, -0.3, 0.0)
+            )
+        
+        elif category == "spin left":
+            #maybe flip values again because documentation be sacmming. 
+            return lambda: self.nao.motion.request(
+                NaoqiMoveRequest(0.0, 0, 0.3)
+            )
 
+        elif category == "spin right":
+            #could flip values
+            return lambda: self.nao.motion.request(
+                NaoqiMoveRequest(0.0, 0, -0.3)
+            )
+        
         return None
 
     def run(self):

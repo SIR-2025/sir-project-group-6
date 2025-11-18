@@ -119,13 +119,13 @@ class Oli4v1Demo(SICApplication):
                 # ---------------------------
                 user_text = None
 
-                # if self.recognizer:
-                #     try:
-                #         with sr.Microphone() as mic:
-                #             audio = self.recognizer.listen(mic, timeout=8, phrase_time_limit=10)
-                #         user_text = self.recognizer.recognize_google(audio)
-                #     except Exception:
-                #         pass
+                if self.recognizer:
+                    try:
+                        with sr.Microphone() as mic:
+                            audio = self.recognizer.listen(mic, timeout=8, phrase_time_limit=10)
+                        user_text = self.recognizer.recognize_google(audio)
+                    except Exception:
+                        pass
 
                 if not user_text:
                     user_text = input("Type here: ").strip()

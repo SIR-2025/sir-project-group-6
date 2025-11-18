@@ -1,4 +1,3 @@
-#This is a version of oli4v1_series.py
 import time
 import json
 import random
@@ -101,7 +100,7 @@ class Oli4v1Demo(SICApplication):
         genai.configure(api_key=key)
 
     # -------------------------------------------------------
-    # RUN LOOP (changed to wait for gesture THEN speak+gesture)
+    # RUN LOOP WITH PARALLEL GESTURE & FULL TIMING
     # -------------------------------------------------------
     def run(self):
         try:
@@ -134,55 +133,68 @@ class Oli4v1Demo(SICApplication):
                     continue
 
                 # ----------------------------------------------------
-                # GEMINI RESPONSE
+                # GEMINI RESPONSE + TIMING
                 # ----------------------------------------------------
                 t0_gemini = time.perf_counter()
                 reply = self.ask_gemini(user_text)
                 t1_gemini = time.perf_counter()
-
                 self.logger.info(f"[TIMING] Gemini response took {t1_gemini - t0_gemini:.3f}s")
 
                 if not reply:
                     continue
 
-                self.logger.info(f"Gemini reply: {reply}")
-
                 # ----------------------------------------------------
-                # CLASSIFICATION (NOW SYNCHRONOUS)
+                # CLASSIFICATION + GESTURE THREAD (combined)
                 # ----------------------------------------------------
-                t0_class = time.perf_counter()
-                self.logger.info("[CLASSIFIER] STARTED classification")
+                gesture_result = {"gesture": None, "t_class_end": None}
+                speech_times = {"t1_speak": None}  # shared timing
 
-                category = classify_gesture_api(reply, self.labels)
-                gesture = select_gesture(self.gesture_dict, category)
+                def classifier_and_gesture_thread():
+                    # --- CLASSIFICATION ---
+                    t0_class = time.perf_counter()
+                    self.logger.info("[CLASSIFIER] STARTED classification")
 
-                t1_class = time.perf_counter()
+                    category = classify_gesture_api(reply, self.labels)
+                    gesture = select_gesture(self.gesture_dict, category)
 
-                self.logger.info(f"[CLASSIFIER] FINISHED in {t1_class - t0_class:.3f}s")
-                self.logger.info(f"[CLASSIFIER] Category={category} | Gesture={gesture}")
+                    t_class_end = time.perf_counter()
+                    gesture_result["gesture"] = gesture
+                    gesture_result["t_class_end"] = t_class_end
 
-                # ----------------------------------------------------
-                # NOW SPEAK + GESTURE SIMULTANEOUSLY
-                # ----------------------------------------------------
-                if gesture and self.nao:
-                    self.logger.info("[ACTION] Speaking AND Gesturing")
+                    self.logger.info(f"[CLASSIFIER] FINISHED in {t_class_end - t0_class:.3f}s")
+                    self.logger.info(f"[CLASSIFIER] → Gesture={gesture}")
 
-                    # Start gesture thread to run in parallel with speech
-                    def gesture_thread():
+                    # --- GESTURE EXECUTION (immediate, even mid-speech!) ---
+                    if gesture and self.nao:
+
+                        # If speech hasn't ended yet, this will be negative (good!)
+                        t1_speak_val = speech_times["t1_speak"]
+                        if t1_speak_val is None:
+                            pause = float('-inf')  # gesture before speech end
+                        else:
+                            pause = t_class_end - t1_speak_val
+
+                        self.logger.info(f"[TIMING] Delay speech end → gesture start: {pause:.3f}s")
+
+                        self.logger.info(f"[GESTURE] Executing gesture: {gesture}")
                         self.nao.motion.request(NaoqiAnimationRequest(gesture))
 
-                    g_thread = threading.Thread(target=gesture_thread)
-                    g_thread.start()
+                classifier = threading.Thread(target=classifier_and_gesture_thread)
+                classifier.start()
 
-                    # Speak while gesture thread runs
-                    self.speak(reply)
-                    self.logger.info(f"Nao said: {reply}")
+                # ----------------------------------------------------
+                # SPEECH (runs in parallel)
+                # ----------------------------------------------------
+                t0_speak = time.perf_counter()
+                self.logger.info("[SPEAK] STARTED speaking")
+                self.logger.info(f"Nao: {reply}")
+                self.speak(reply)
+                t1_speak = time.perf_counter()
+                speech_times["t1_speak"] = t1_speak  # <-- store it here
+                self.logger.info(f"[SPEAK] FINISHED in {t1_speak - t0_speak:.3f}s")
 
-                    g_thread.join()  # wait until gesture completes
-
-                else:
-                    # If NAO not connected, just speak
-                    self.speak(reply)
+                # Wait for classifier (gesture runs inside it)
+                classifier.join()
 
         except KeyboardInterrupt:
             self.logger.info("Interrupted")

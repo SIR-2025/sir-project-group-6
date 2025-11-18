@@ -1,4 +1,3 @@
-#This is a version of oli4v1_series.py
 import time
 import json
 import random

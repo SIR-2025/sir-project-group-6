@@ -67,7 +67,7 @@ class NaoProxemicsDemo(SICApplication):
             )
         
         elif category == "right":
-            #naar rechts? (misschien andersom met + en -)
+            #naar rechts? (misschien andersom met + en -). Deze value is ook een snelheid ipv een afstand zoals bij links/rechts; zet er een timer op
             return lambda: self.nao.motion.request(
                 NaoqiMoveRequest(0.0, -0.3, 0.0)
             )
@@ -78,7 +78,7 @@ class NaoProxemicsDemo(SICApplication):
             )
         
         elif category == "spin left":
-            #maybe flip values again because documentation be scamming. speed is in radians
+            #maybe flip values again because documentation be scamming. speed is in radians. Speed doesn't initally stop, timer!
             return lambda: self.nao.motion.request(
                 NaoqiMoveRequest(0.0, 0, 0.3)
             )

@@ -1,0 +1,29 @@
+import torch
+import numpy as np
+import cv2
+from transformers import ZoeDepthForDepthEstimation, ZoeDepthProcessor
+
+class DepthEstimator:
+    def __init__(self, device="cpu"):
+        self.device = device
+        self.processor = ZoeDepthProcessor.from_pretrained("ShariqZahid/ZoeDepth-N")
+        self.model = ZoeDepthForDepthEstimation.from_pretrained("ShariqZahid/ZoeDepth-N").to(device)
+        self.model.eval()
+
+    @torch.no_grad()
+    def predict_depth(self, frame_bgr):
+        #bgr to rgb shenanigans
+        frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+
+        # Preprocess
+        inputs = self.processor(images=frame_rgb, return_tensors="pt").to(self.device)
+
+        #run the model
+        output = self.model(**inputs)
+        depth = output.predicted_depth.squeeze().cpu().numpy()
+
+        #normalize for visualisation
+        depth_vis = (depth - depth.min()) / (depth.max() - depth.min() + 1e-6)
+        depth_vis = (depth_vis * 255).astype(np.uint8)
+        print(depth, depth_vis)
+        return depth, depth_vis

@@ -69,16 +69,16 @@ class NaoProxemicsDemo(SICApplication):
         elif category == "right":
             #naar rechts? (misschien andersom met + en -)
             return lambda: self.nao.motion.request(
-                NaoqiMoveRequest(0.0, 0.3, 0.0)
+                NaoqiMoveRequest(0.0, -0.3, 0.0)
             )
         elif category == "left":
             #naar links?
             return lambda: self.nao.motion.request(
-                NaoqiMoveRequest(0.0, -0.3, 0.0)
+                NaoqiMoveRequest(0.0, 0.3, 0.0)
             )
         
         elif category == "spin left":
-            #maybe flip values again because documentation be scamming. 
+            #maybe flip values again because documentation be scamming. speed is in radians
             return lambda: self.nao.motion.request(
                 NaoqiMoveRequest(0.0, 0, 0.3)
             )

@@ -82,9 +82,22 @@ python main.py
 
 ---
 
+## `oli-4` Folder Structure
+
+The `oli-4` folder contains all new code developed for this project, separate from the original **sir-project template**. Its structure is:
+
+* **`main.py`** – Demo script showcasing the current state of the robot interaction and implemented design features
+* **`tests/`** – Scripts to test specific functionalities independently
+* **`func/`** – Implementation scripts for individual functionalities (e.g., gesture classification)
+* **`logs/`** – Log files generated during runs
+* **`config/`** – Configuration files, including GestureAPI setup and other parameters
+
+This structure helps distinguish the custom code from the template and keeps the project organized.
+
+---
+
 ## Notes
 
-* **Ports:** GestureAPI default: `8001`, Redis default: `6379`
 * **Batch file** simplifies the process and ensures the correct environment is activated
 * Make sure your NAO robot is network-accessible for `main.py`
 * Make sure you are connected to the same network as the Nao and not using a VPN

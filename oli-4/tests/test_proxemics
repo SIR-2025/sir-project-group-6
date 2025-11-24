@@ -6,7 +6,6 @@ from sic_framework.devices.common_naoqi.naoqi_stiffness import Stiffness
 from sic_framework.devices.common_naoqi.naoqi_tracker import StartTrackRequest, StopAllTrackRequest
 from sic_framework.devices.common_naoqi.naoqi_motion import NaoqiMoveRequest, NaoqiMoveToRequest
 import time
-import threading
 
 
 class NaoFaceProxemics(SICApplication):
@@ -15,31 +14,11 @@ class NaoFaceProxemics(SICApplication):
         super().__init__()
         self.nao_ip = "10.0.0.242"
         self.nao = None
-        self.sideways_lock = threading.Lock()   # so sideways moves don't overlap
         self.setup()
 
     def setup(self):
         self.logger.info("Start NAO-proxemics test")
         self.nao = Nao(ip=self.nao_ip)
-
-    # -------------------------
-    # Helper: timed sideways motion
-    # -------------------------
-    def timed_sideways_move(self, y_speed, duration=2.0):
-        """
-        Move sideways at velocity y_speed for 'duration' seconds.
-        Positive y_speed = left, negative = right.
-        """
-        def _run():
-            with self.sideways_lock:
-                # Start moving sideways
-                self.nao.motion.request(NaoqiMoveRequest(0.0, y_speed, 0.0))
-                time.sleep(duration)
-                # Stop after duration
-                self.nao.motion.request(NaoqiMoveRequest(0.0, 0.0, 0.0))
-
-        threading.Thread(target=_run, daemon=True).start()
-
 
     def run(self):
         try:
@@ -57,47 +36,55 @@ class NaoFaceProxemics(SICApplication):
                 )
             )
 
-            time.sleep(1)
+            time.sleep(0.2)
             self.logger.info("Entering proxemics loop…")
 
             while not self.shutdown_event.is_set():
 
                 state = self.nao.tracker.last_state
 
+                # NO FACE DETECTED → rotate for a moment to search
                 if state is None:
-                    # No face → just stop and wait
-                    self.nao.motion.request(NaoqiMoveRequest(0,0,0))
-                    time.sleep(1.0)
+                    self.nao.motion.request(NaoqiMoveRequest(0.0, 0.0, 0.3))  # rotate left, maybe random?
+                    time.sleep(0.1)                                          # rotate for x seconds
+                    self.nao.motion.request(NaoqiMoveRequest(0.0, 0.0, 0.0)) # stop rotation
+                    time.sleep(0.1)  # pause before checking again
                     continue
+                
+                # FACE DETECTED → extract values
+                size = state.w       # proxy for distance (larger = closer)
+                alpha = state.alpha  # horizontal offset angle
 
-                # Extract approximate distance & angle
-                size = state.w
-                alpha = state.alpha
+                # FORWARD / BACKWARD BASED ON DISTANCE
 
-                # ------------------------
-                # FORWARD / BACKWARD
-                # ------------------------
                 if size < 0.15:
-                    # far → move forward (negative X in SIC)
+                    # Far → move forward (negative X)
                     self.nao.motion.request(NaoqiMoveToRequest(-0.10, 0.0, 0.0))
+
                 elif size > 0.30:
-                    # too close → move backward
+                    # Too close → move backward
                     self.nao.motion.request(NaoqiMoveToRequest(+0.10, 0.0, 0.0))
+
                 else:
-                    # good distance → stop
-                    self.nao.motion.request(NaoqiMoveRequest(0,0,0))
+                    # Good distance → stop forward/backward movement
+                    self.nao.motion.request(NaoqiMoveRequest(0, 0, 0))
 
-                # ------------------------
-                # LEFT / RIGHT (timed)
-                # ------------------------
+                # SIDE-TO-SIDE BASED ON ANGLE (speed-based, timed)
                 if alpha > 0.15:
-                    # face is left → step right (negative Y)
-                    self.timed_sideways_move(y_speed=-0.3, duration=2.0)
-                elif alpha < -0.15:
-                    # face is right → step left (positive Y)
-                    self.timed_sideways_move(y_speed=+0.3, duration=2.0)
+                    # Face left → move right (negative Y)
+                    self.nao.motion.request(NaoqiMoveRequest(0.0, -0.3, 0.0))
+                    time.sleep(0.1)  #hoe lang je stapt
+                    self.nao.motion.request(NaoqiMoveRequest(0.0, 0.0, 0.0))
 
-                time.sleep(0.5)  # delay between checks
+                elif alpha < -0.15:
+                    # Face right → move left (positive Y)
+                    self.nao.motion.request(NaoqiMoveRequest(0.0, +0.3, 0.0))
+                    time.sleep(0.1)  # #hoe lang je stapt
+                    self.nao.motion.request(NaoqiMoveRequest(0.0, 0.0, 0.0))
+
+                else:
+                    # Perfectly centered → make sure sideways motion is stopped
+                    self.nao.motion.request(NaoqiMoveRequest(0, 0, 0))
 
         except Exception as e:
             self.logger.error(f"Error: {e}")

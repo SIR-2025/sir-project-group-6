@@ -1,29 +1,113 @@
-import torch
-import numpy as np
-import cv2
-from transformers import ZoeDepthForDepthEstimation, ZoeDepthProcessor
+from sic_framework.core.sic_application import SICApplication
+from sic_framework.core import sic_logging
 
-class DepthEstimator:
-    def __init__(self, device="cpu"):
-        self.device = device
-        self.processor = ZoeDepthProcessor.from_pretrained("ShariqZahid/ZoeDepth-N")
-        self.model = ZoeDepthForDepthEstimation.from_pretrained("ShariqZahid/ZoeDepth-N").to(device)
-        self.model.eval()
+from sic_framework.devices import Nao
+from sic_framework.devices.common_naoqi.naoqi_stiffness import Stiffness
+from sic_framework.devices.common_naoqi.naoqi_tracker import StartTrackRequest, StopAllTrackRequest
+from sic_framework.devices.common_naoqi.naoqi_motion import NaoqiMoveRequest, NaoqiMoveToRequest
+import time
+import threading
 
-    @torch.no_grad()
-    def predict_depth(self, frame_bgr):
-        #bgr to rgb shenanigans
-        frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
 
-        # Preprocess
-        inputs = self.processor(images=frame_rgb, return_tensors="pt").to(self.device)
+class NaoFaceProxemics(SICApplication):
 
-        #run the model
-        output = self.model(**inputs)
-        depth = output.predicted_depth.squeeze().cpu().numpy()
+    def __init__(self):
+        super().__init__()
+        self.nao_ip = "10.0.0.242"
+        self.nao = None
+        self.sideways_lock = threading.Lock()   # so sideways moves don't overlap
+        self.setup()
 
-        #normalize for visualisation
-        depth_vis = (depth - depth.min()) / (depth.max() - depth.min() + 1e-6)
-        depth_vis = (depth_vis * 255).astype(np.uint8)
-        print(depth, depth_vis)
-        return depth, depth_vis
+    def setup(self):
+        self.logger.info("Start NAO-proxemics test")
+        self.nao = Nao(ip=self.nao_ip)
+
+    # -------------------------
+    # Helper: timed sideways motion
+    # -------------------------
+    def timed_sideways_move(self, y_speed, duration=2.0):
+        """
+        Move sideways at velocity y_speed for 'duration' seconds.
+        Positive y_speed = left, negative = right.
+        """
+        def _run():
+            with self.sideways_lock:
+                # Start moving sideways
+                self.nao.motion.request(NaoqiMoveRequest(0.0, y_speed, 0.0))
+                time.sleep(duration)
+                # Stop after duration
+                self.nao.motion.request(NaoqiMoveRequest(0.0, 0.0, 0.0))
+
+        threading.Thread(target=_run, daemon=True).start()
+
+
+    def run(self):
+        try:
+            self.logger.info("Enabling head stiffness")
+            self.nao.stiffness.request(Stiffness(stiffness=1.0, joints=["Head"]))
+
+            # Start face tracking (head only)
+            self.logger.info("Starting face tracking…")
+            self.nao.tracker.request(
+                StartTrackRequest(
+                    target_name="Face",
+                    size=0.2,
+                    mode="Head",
+                    effector="None"
+                )
+            )
+
+            time.sleep(1)
+            self.logger.info("Entering proxemics loop…")
+
+            while not self.shutdown_event.is_set():
+
+                state = self.nao.tracker.last_state
+
+                if state is None:
+                    # No face → just stop and wait
+                    self.nao.motion.request(NaoqiMoveRequest(0,0,0))
+                    time.sleep(1.0)
+                    continue
+
+                # Extract approximate distance & angle
+                size = state.w
+                alpha = state.alpha
+
+                # ------------------------
+                # FORWARD / BACKWARD
+                # ------------------------
+                if size < 0.15:
+                    # far → move forward (negative X in SIC)
+                    self.nao.motion.request(NaoqiMoveToRequest(-0.10, 0.0, 0.0))
+                elif size > 0.30:
+                    # too close → move backward
+                    self.nao.motion.request(NaoqiMoveToRequest(+0.10, 0.0, 0.0))
+                else:
+                    # good distance → stop
+                    self.nao.motion.request(NaoqiMoveRequest(0,0,0))
+
+                # ------------------------
+                # LEFT / RIGHT (timed)
+                # ------------------------
+                if alpha > 0.15:
+                    # face is left → step right (negative Y)
+                    self.timed_sideways_move(y_speed=-0.3, duration=2.0)
+                elif alpha < -0.15:
+                    # face is right → step left (positive Y)
+                    self.timed_sideways_move(y_speed=+0.3, duration=2.0)
+
+                time.sleep(0.5)  # delay between checks
+
+        except Exception as e:
+            self.logger.error(f"Error: {e}")
+
+        finally:
+            self.logger.info("Stopping tracking…")
+            self.nao.tracker.request(StopAllTrackRequest())
+            self.shutdown()
+
+
+if __name__ == "__main__":
+    demo = NaoFaceProxemics()
+    demo.run()

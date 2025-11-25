@@ -46,7 +46,7 @@ class NaoFaceProxemics(SICApplication):
                 # NO FACE DETECTED: rotate for a moment to search
                 if state is None:
                     self.nao.motion.request(NaoqiMoveRequest(0.0, 0.0, 0.3))  # rotate left, maybe random? (or try to make it line the face up in the center first, but check first how it interacts with the gaze function)
-                    time.sleep(0.1)                                          # rotate for x seconds
+                    time.sleep(0.3)                                          # rotate for x seconds
                     self.nao.motion.request(NaoqiMoveRequest(0.0, 0.0, 0.0)) # stop rotation
                     time.sleep(0.1)  # pause before checking again
                     continue
@@ -58,12 +58,15 @@ class NaoFaceProxemics(SICApplication):
                 # FORWARD / BACKWARD BASED ON DISTANCE
 
                 if size < 0.15:
-                    # Far: move forward (negative X)
-                    self.nao.motion.request(NaoqiMoveToRequest(-0.10, 0.0, 0.0))
-
+                    # Far: move forward (negative X) (pauses by himself, if not mistaken, else uncomment the two lines after)
+                    self.nao.motion.request(NaoqiMoveToRequest(+0.10, 0.0, 0.0))
+                    #time.sleep(0.1)  #hoe lang je stapt (draait bij z)
+                    #self.nao.motion.request(NaoqiMoveRequest(0.0, 0.0, 0.0))
                 elif size > 0.30:
                     # Too close: move backward
-                    self.nao.motion.request(NaoqiMoveToRequest(+0.10, 0.0, 0.0))
+                    self.nao.motion.request(NaoqiMoveToRequest(-0.10, 0.0, 0.0))
+                    #time.sleep(0.1)  #hoe lang je stapt (draait bij z)
+                    #self.nao.motion.request(NaoqiMoveRequest(0.0, 0.0, 0.0))
 
                 else:
                     # Good distance :stop forward/backward movement
@@ -73,7 +76,7 @@ class NaoFaceProxemics(SICApplication):
                 if alpha > 0.3:
                     # Face left: move right (negative Y)
                     self.nao.motion.request(NaoqiMoveRequest(0.0, 0, -0.3))
-                    time.sleep(0.1)  #hoe lang je stapt
+                    time.sleep(0.1)  #hoe lang je stapt (draait bij z)
                     self.nao.motion.request(NaoqiMoveRequest(0.0, 0.0, 0.0))
                 elif alpha > 0.15:
                     # Face left: move right (negative Y)

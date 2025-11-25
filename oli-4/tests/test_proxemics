@@ -69,19 +69,28 @@ class NaoFaceProxemics(SICApplication):
                     # Good distance :stop forward/backward movement
                     self.nao.motion.request(NaoqiMoveRequest(0, 0, 0))
 
-                # SIDE-TO-SIDE BASED ON ANGLE (speed-based, timed)
-                if alpha > 0.15:
+                # SIDE-TO-SIDE BASED ON ANGLE (speed-based, timed) (do the z to turn around it in its place)
+                if alpha > 0.3:
                     # Face left: move right (negative Y)
-                    self.nao.motion.request(NaoqiMoveRequest(0.0, -0.3, 0.0))
+                    self.nao.motion.request(NaoqiMoveRequest(0.0, 0, -0.3))
+                    time.sleep(0.1)  #hoe lang je stapt
+                    self.nao.motion.request(NaoqiMoveRequest(0.0, 0.0, 0.0))
+                elif alpha > 0.15:
+                    # Face left: move right (negative Y)
+                    self.nao.motion.request(NaoqiMoveRequest(0.0, 0, -0.15))
                     time.sleep(0.1)  #hoe lang je stapt
                     self.nao.motion.request(NaoqiMoveRequest(0.0, 0.0, 0.0))
 
-                elif alpha < -0.15:
+                elif alpha < -0.3:
                     # Face right: move left (positive Y)
-                    self.nao.motion.request(NaoqiMoveRequest(0.0, +0.3, 0.0))
+                    self.nao.motion.request(NaoqiMoveRequest(0.0, 0, 0.3))
                     time.sleep(0.1)  # #hoe lang je stapt
                     self.nao.motion.request(NaoqiMoveRequest(0.0, 0.0, 0.0))
-
+                elif alpha < -0.15:
+                    # Face right: move left (positive Y)
+                    self.nao.motion.request(NaoqiMoveRequest(0.0, 0, 0.15))
+                    time.sleep(0.1)  # #hoe lang je stapt
+                    self.nao.motion.request(NaoqiMoveRequest(0.0, 0.0, 0.0))
                 else:
                     # Perfectly centered: make sure sideways motion is stopped
                     self.nao.motion.request(NaoqiMoveRequest(0, 0, 0))

@@ -1,11 +1,9 @@
-#This is a version of oli4v1_series.py
 import time
 import json
-import random
 import threading
-import numpy as np
 import speech_recognition as sr
 import google.generativeai as genai
+import os
 
 # Gesture functions
 from func.gesture import classify_gesture_api, select_gesture
@@ -65,6 +63,13 @@ class Oli4v3Demo(SICApplication):
         self.gemini_model = "gemini-2.5-flash"
         self.api_key_path = abspath(join("config", "api_key.txt"))
 
+        # Setup logging to file for analysis
+        logs_folder = abspath("logs")
+        os.makedirs(logs_folder, exist_ok=True)
+        self.data_log_path = os.path.join(logs_folder, f"interaction_log_nao{int(time.time())}.jsonl")
+
+        self.logger.info(f"Data log will be saved to: {self.data_log_path}")
+
         self.setup()
 
     # Gemini LLM call
@@ -118,6 +123,21 @@ class Oli4v3Demo(SICApplication):
         with open(self.api_key_path) as f:
             key = f.read().strip()
         genai.configure(api_key=key)
+
+    def log_interaction(self, scene_id, user_text, reply, gemini_time, classifier_time, category, gesture):
+        """Write a single interaction to the JSONL log file."""
+        entry = {
+            "timestamp": time.time(),
+            "scene_id": scene_id,
+            "user_text": user_text,
+            "gemini_reply": reply,
+            "gemini_response_time": gemini_time,
+            "classifier_time": classifier_time,
+            "gesture_category": category,
+            "gesture_selected": gesture
+        }
+        with open(self.data_log_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry) + "\n")
     
     def run_scene(self, scene_id, gestures):
         system_prompt = self.scene_prompts[scene_id]["prompt"]
@@ -168,8 +188,9 @@ class Oli4v3Demo(SICApplication):
                 t0_gemini = time.perf_counter()
                 reply = self.ask_gemini(history)
                 t1_gemini = time.perf_counter()
+                gemini_time = t1_gemini - t0_gemini
 
-                self.logger.info(f"[TIMING] Gemini response took {t1_gemini - t0_gemini:.3f}s")
+                self.logger.info(f"[TIMING] Gemini response took {gemini_time:.3f}s")
 
                 if not reply:
                     continue
@@ -192,7 +213,9 @@ class Oli4v3Demo(SICApplication):
                 category = classify_gesture_api(reply, labels)
                 gesture = select_gesture(gestures, category)
                 t1_class = time.perf_counter()
-                self.logger.info(f"[CLASSIFIER] FINISHED in {t1_class - t0_class:.3f}s")
+
+                classifier_time = t1_class - t0_class
+                self.logger.info(f"[CLASSIFIER] FINISHED in {classifier_time:.3f}s")
                 self.logger.info(f"[CLASSIFIER] Category={category} | Gesture={gesture}")
                 self.logger.info("[DONE][CLASSIFIER] Finished classification")
 
@@ -213,6 +236,19 @@ class Oli4v3Demo(SICApplication):
                     g_thread.join()
                 else:
                     self.speak(reply)
+                
+                # ---------------------
+                # LOG DATA
+                # ---------------------
+                self.log_interaction(
+                    scene_id=scene_id,
+                    user_text=user_text,
+                    reply=reply,
+                    gemini_time=gemini_time,
+                    classifier_time=classifier_time,
+                    category=category,
+                    gesture=gesture
+                )
 
                 # END SCENE on keyword
                 if stopword in user_text.lower():

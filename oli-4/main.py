@@ -25,6 +25,20 @@ from sic_framework.devices.common_naoqi.naoqi_leds import NaoLEDRequest
 
 from os.path import abspath, join
 
+from sic_framework.devices.common_naoqi.naoqi_leds import (
+    NaoFadeRGBRequest,
+    NaoLEDRequest,
+)
+
+# Import message types and requests
+from sic_framework.devices.common_naoqi.naoqi_stiffness import Stiffness
+from sic_framework.devices.common_naoqi.naoqi_tracker import (
+    RemoveTargetRequest,
+    StartTrackRequest,
+    StopAllTrackRequest,
+)
+
+from sic_framework.devices.common_naoqi.naoqi_motion import NaoqiBreathingRequest
 
 class Oli4v1Demo(SICApplication):
     def __init__(self):
@@ -33,13 +47,18 @@ class Oli4v1Demo(SICApplication):
         self.set_log_level(sic_logging.INFO)
 
         # NAO
-        self.nao_ip = "10.0.0.242"
+        self.nao_ip = "10.0.0.211"
         self.nao = None
 
         # Gesture dictionary
         with open("config/gestures.json", "r") as f:
-            self.gesture_dict = json.load(f)
-        self.labels = list(self.gesture_dict.keys())
+            gestures_raw = json.load(f)
+        self.gesture_sitting = gestures_raw["sitting"]
+        self.gesture_standing = gestures_raw["standing"]
+
+        with open("config/scenes.json", "r") as f:
+            self.scene_prompts = json.load(f)
+
 
         # Speech & LLM
         self.recognizer = None
@@ -49,17 +68,14 @@ class Oli4v1Demo(SICApplication):
         self.setup()
 
     # Gemini LLM call
-    def ask_gemini(self, text):
+    def ask_gemini(self, text, system_prompt):
         if not text:
             return None
 
         try:
             model = genai.GenerativeModel(
                 self.gemini_model,
-                system_instruction="""
-                You are a sarcastic, witty comedian with dry humor.
-                Keep replies SHORT and punchy.
-                """
+                system_instruction=system_prompt
             )
             response = model.generate_content(text)
             return response.text.strip()
@@ -70,6 +86,7 @@ class Oli4v1Demo(SICApplication):
 
     # Speak
     def speak(self, text):
+        print(f"Speak DEBUG: {text}")
         if not text:
             return
         try:
@@ -99,31 +116,29 @@ class Oli4v1Demo(SICApplication):
         with open(self.api_key_path) as f:
             key = f.read().strip()
         genai.configure(api_key=key)
+    
+    def run_scene(self, scene_id, gestures):
+        system_prompt = self.scene_prompts[scene_id]
+        labels = list(gestures.keys())
 
-    # -------------------------------------------------------
-    # RUN LOOP (changed to wait for gesture THEN speak+gesture)
-    # -------------------------------------------------------
-    def run(self):
-        try:
-            if self.nao:
-                self.nao.motion.request(NaoPostureRequest("Stand", 0.5))
+        self.logger.info(f"--- Starting Scene {scene_id} ---")
+        self.speak("Starting next part...")
+
+        while not self.shutdown_event.is_set():
+            try:
+                # ---------------------
+                # USER INPUT
+                # ---------------------
+                self.logger.info("[START][INPUT]Setting LED to blue")
+                light = self.nao.leds.request(NaoFadeRGBRequest("FaceLeds", 0, 0, 1, 0))
                 time.sleep(1)
-
-            self.speak("I'm ready whenever you are.")
-            self.logger.info("Ready")
-
-            while not self.shutdown_event.is_set():
-
-                # ---------------------------
-                # Get input
-                # ---------------------------
                 user_text = None
-
                 if self.recognizer:
                     try:
                         with sr.Microphone() as mic:
                             audio = self.recognizer.listen(mic, timeout=8, phrase_time_limit=10)
                         user_text = self.recognizer.recognize_google(audio)
+                        self.logger.info(f"You said: {user_text}")
                     except Exception:
                         pass
 
@@ -132,12 +147,15 @@ class Oli4v1Demo(SICApplication):
 
                 if not user_text:
                     continue
+                self.logger.info("[END][INPUT]")
 
-                # ----------------------------------------------------
-                # GEMINI RESPONSE
-                # ----------------------------------------------------
+                # ---------------------
+                # LLM RESPONSE
+                # ---------------------
+                self.logger.info("[START][LLM] Setting LED to red")
+                light = self.nao.leds.request(NaoFadeRGBRequest("FaceLeds", 1, 0, 0, 0))
                 t0_gemini = time.perf_counter()
-                reply = self.ask_gemini(user_text)
+                reply = self.ask_gemini(user_text, system_prompt)
                 t1_gemini = time.perf_counter()
 
                 self.logger.info(f"[TIMING] Gemini response took {t1_gemini - t0_gemini:.3f}s")
@@ -147,49 +165,137 @@ class Oli4v1Demo(SICApplication):
 
                 self.logger.info(f"Gemini reply: {reply}")
 
-                # ----------------------------------------------------
-                # CLASSIFICATION (NOW SYNCHRONOUS)
-                # ----------------------------------------------------
+                # ---------------------
+                # GESTURE CLASSIFICATION
+                # ---------------------
+                self.logger.info("[START][CLASSIFIER] Start classifier, Set LED to yellow")
+                light = self.nao.leds.request(NaoFadeRGBRequest("FaceLeds", 1, 1, 0, 0))
                 t0_class = time.perf_counter()
                 self.logger.info("[CLASSIFIER] STARTED classification")
 
-                category = classify_gesture_api(reply, self.labels)
-                gesture = select_gesture(self.gesture_dict, category)
-
+                category = classify_gesture_api(reply, labels)
+                gesture = select_gesture(gestures, category)
                 t1_class = time.perf_counter()
-
                 self.logger.info(f"[CLASSIFIER] FINISHED in {t1_class - t0_class:.3f}s")
                 self.logger.info(f"[CLASSIFIER] Category={category} | Gesture={gesture}")
+                self.logger.info("[DONE][CLASSIFIER] Finished classification")
 
-                # ----------------------------------------------------
-                # NOW SPEAK + GESTURE SIMULTANEOUSLY
-                # ----------------------------------------------------
+                # ---------------------
+                # EXECUTE ACTION
+                # ---------------------
+                self.logger.info("[START][SPEAK + GESTURE] Setting LED to green")
+                light = self.nao.leds.request(NaoFadeRGBRequest("FaceLeds", 0, 1, 0, 0))
                 if gesture and self.nao:
-                    self.logger.info("[ACTION] Speaking AND Gesturing")
-
-                    # Start gesture thread to run in parallel with speech
                     def gesture_thread():
+                        self.logger.info(f"[GESTURE] Gesturing: {gesture}")
                         self.nao.motion.request(NaoqiAnimationRequest(gesture))
 
                     g_thread = threading.Thread(target=gesture_thread)
+                    print("DEBUG: Start threading")
                     g_thread.start()
-
-                    # Speak while gesture thread runs
+                    print("DEBUG: DOING REPLY")
                     self.speak(reply)
-                    self.logger.info(f"Nao said: {reply}")
-
-                    g_thread.join()  # wait until gesture completes
-
+                    self.logger.info(f"[SPEAK] Nao said: {reply}")
+                    print("DEBUG: JOINING THREADING")
+                    g_thread.join()
                 else:
-                    # If NAO not connected, just speak
                     self.speak(reply)
+
+                # END SCENE on keyword
+                if "alpaca" in user_text.lower():
+                    self.speak("Okay, moving on.")
+                    break
+
+            except KeyboardInterrupt:
+                raise  # handled by outer run()
+
+    # -------------------------------------------------------
+    # RUN LOOP (changed to wait for gesture THEN speak+gesture)
+    # -------------------------------------------------------
+    def run(self):
+        try:
+            # Initial NAO setup
+            if self.nao:
+                self.nao.motion.request(NaoPostureRequest("Stand", 0.5))
+                time.sleep(1)
+
+                self.logger.info("Requesting Eye LEDs to turn on")
+                reply = self.nao.leds.request(NaoLEDRequest("FaceLeds", True))
+                time.sleep(1)
+
+                target_name = "Face"
+            
+                self.logger.info("Enabling head stiffness and starting face tracking...")
+                # Enable stiffness so the head joint can be actuated
+                self.nao.stiffness.request(Stiffness(stiffness=1.0, joints=["Head"]))
+                self.nao.tracker.request(
+                    StartTrackRequest(target_name=target_name, size=0.2, mode="Head", effector="None")
+                )
+
+            # --------------------
+            # SCENE 1 (Standing)
+            # --------------------
+            self.logger.info("Scene 1: Sarcastic")
+            if self.nao:
+                self.nao.motion.request(NaoPostureRequest("Stand", 0.5))
+            self.run_scene("scene1", self.gesture_standing)
+
+            # --------------------
+            # SCENE 2 (standing)
+            # --------------------
+            self.logger.info("Scene 2: Caring")
+            if self.nao:
+                self.nao.motion.request(NaoPostureRequest("Stand", 0.5))
+            self.run_scene("scene2", self.gesture_standing)
+
+            # --------------------
+            # SCENE 3 (standing)
+            # --------------------
+            self.logger.info("Scene 3: Short-tempered")
+            self.run_scene("scene3", self.gesture_standing)
+
+            self.speak("Demo complete. Thank you!")
+
+            self.logger.info("Stopping face tracking...")
+            self.nao.tracker.request(RemoveTargetRequest(target_name))
+            
+            # Stop tracking everything
+            self.logger.info("Stopping all tracking...")
+            self.nao.tracker.request(StopAllTrackRequest())
+            
+            self.logger.info("Tracker demo completed successfully")
 
         except KeyboardInterrupt:
             self.logger.info("Interrupted")
+            # Unregister target face
+            self.logger.info("Stopping face tracking...")
+            self.nao.tracker.request(RemoveTargetRequest(target_name))
+            
+            # Stop tracking everything
+            self.logger.info("Stopping all tracking...")
+            self.nao.tracker.request(StopAllTrackRequest())
+
+            self.nao.leds.request(NaoLEDRequest("FaceLeds", True))
+
+            self.nao.motion.request(NaoPostureRequest("Stand", 0.5))
+
+            self.nao.autonomous.request(NaoRestRequest())
+            self.shutdown()
 
         finally:
             if self.nao:
+                # Unregister target face
+                self.logger.info("Stopping face tracking...")
+                self.nao.tracker.request(RemoveTargetRequest(target_name))
+                
+                # Stop tracking everything
+                self.logger.info("Stopping all tracking...")
+                self.nao.tracker.request(StopAllTrackRequest())
+
                 self.nao.leds.request(NaoLEDRequest("FaceLeds", True))
+
+                self.nao.motion.request(NaoPostureRequest("Stand", 0.5))
+
                 self.nao.autonomous.request(NaoRestRequest())
             self.shutdown()
 

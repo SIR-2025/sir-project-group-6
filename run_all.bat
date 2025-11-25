@@ -13,8 +13,8 @@ start "GestureAPI" cmd /k "call C:\Miniforge3\Scripts\activate.bat C:\Miniforge3
 
 REM ====== WAIT FOR SERVICES TO START ======
 echo.
-echo Waiting 25 seconds for Redis and GestureAPI to fully start...
-timeout /t 25 /nobreak >nul
+echo Waiting 15 seconds for Redis and GestureAPI to fully start...
+timeout /t 15 /nobreak >nul
 echo Continuing...
 
 REM ====== STEP 3: START main.py IN env_sic ======

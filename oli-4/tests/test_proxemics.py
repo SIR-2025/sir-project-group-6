@@ -12,7 +12,7 @@ class NaoFaceProxemics(SICApplication):
 
     def __init__(self):
         super().__init__()
-        self.nao_ip = "10.0.0.211"
+        self.nao_ip = "10.0.0.212"
         self.nao = None
         self.last_tracker_state = None #states?! (geen states gevodnen in nao)
 

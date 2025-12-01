@@ -14,11 +14,18 @@ class NaoFaceProxemics(SICApplication):
         super().__init__()
         self.nao_ip = "10.0.0.211"
         self.nao = None
+        self.last_tracker_state = None #states?! (geen states gevodnen in nao)
+
         self.setup()
 
     def setup(self):
         self.logger.info("Start NAO-proxemics test")
         self.nao = Nao(ip=self.nao_ip)
+
+        #asynchrone updates?---
+        @self.nao.tracker.callback
+        def on_tracker_update(state):
+            self.last_tracker_state = state  
 
     def run(self):
         try:
@@ -40,8 +47,7 @@ class NaoFaceProxemics(SICApplication):
             self.logger.info("Entering proxemics loop…")
 
             while not self.shutdown_event.is_set():
-
-                state = self.nao.tracker.last_state
+                state = self.last_tracker_state #state hier
 
                 # NO FACE DETECTED: rotate for a moment to search
                 if state is None:
@@ -51,7 +57,7 @@ class NaoFaceProxemics(SICApplication):
                     time.sleep(0.1)  # pause before checking again
                     continue
 
-                # FACE DETECTED :get values
+                #face detected, get values
                 size = state.w       # basically distance, although face size could matter
                 alpha = state.alpha  # horizontal offset. Maybe use it to center later
 

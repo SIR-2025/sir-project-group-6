@@ -45,7 +45,7 @@ class Oli4v3Demo(SICApplication):
         self.set_log_level(sic_logging.INFO)
 
         # NAO
-        self.nao_ip = "10.0.0.211"
+        self.nao_ip = "10.0.0.212"
         self.nao = None
 
         # Gesture dictionary

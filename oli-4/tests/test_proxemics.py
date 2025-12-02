@@ -22,7 +22,6 @@ class NaoFaceProxemics(SICApplication):
         self.logger.info("Start NAO-proxemics test")
         self.nao = Nao(ip=self.nao_ip)
         #asynchrone updates?---
-        @self.nao.tracker.callback
         def on_tracker_update(state):
             self.last_tracker_state = state  
 

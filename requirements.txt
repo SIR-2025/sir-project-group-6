@@ -8,6 +8,7 @@ cffi==2.0.0
 charset-normalizer==3.4.4
 click==8.3.0
 colorama==0.4.6
+comtypes==1.4.13
 cryptography==46.0.3
 dotenv==0.9.9
 fastapi==0.121.1
@@ -48,8 +49,11 @@ pydantic==2.12.4
 pydantic_core==2.41.5
 PyNaCl==1.6.0
 pyparsing==3.2.5
+pypiwin32==223
 python-dotenv==1.2.1
+pyttsx3==2.99
 PyTurboJPEG==1.8.2
+pywin32==311
 PyYAML==6.0.3
 redis==7.0.0
 regex==2025.11.3

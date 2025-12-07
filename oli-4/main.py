@@ -36,8 +36,6 @@ from sic_framework.devices.common_naoqi.naoqi_tracker import (
     StopAllTrackRequest,
 )
 
-from sic_framework.devices.common_naoqi.naoqi_motion import NaoqiBreathingRequest
-
 class Oli4v4Demo(SICApplication):
     def __init__(self):
         super(Oli4v4Demo, self).__init__()
@@ -57,7 +55,7 @@ class Oli4v4Demo(SICApplication):
         with open("config/scenes.json", "r") as f:
             self.scene_prompts = json.load(f)
 
-        with open("eyecolors.json", "r") as f:
+        with open("config/eyecolors.json", "r") as f:
             gesture_colors = json.load(f)
         self.gesture_colors_sitting = gesture_colors["sitting"]
         self.gesture_colors_standing = gesture_colors["standing"]
@@ -73,6 +71,9 @@ class Oli4v4Demo(SICApplication):
         self.data_log_path = os.path.join(logs_folder, f"interaction_log_nao{int(time.time())}.jsonl")
 
         self.logger.info(f"Data log will be saved to: {self.data_log_path}")
+
+        self.listen_timeout = 20         # wait up to 20 seconds for speech
+        self.phrase_limit = 30           # allow up to 30 seconds of speaking
 
         self.setup()
 
@@ -162,7 +163,6 @@ class Oli4v4Demo(SICApplication):
         )
 
         self.logger.info(f"--- Starting Scene {scene_id} ---")
-        self.speak("Starting next part...")
 
         while not self.shutdown_event.is_set():
             try:
@@ -172,15 +172,14 @@ class Oli4v4Demo(SICApplication):
                 self.logger.info("[START][INPUT]Setting LED to blue")
                 light = self.nao.leds.request(NaoFadeRGBRequest("ChestLeds", 0, 0, 1, 0))
                 time.sleep(1)
+
                 user_text = None
                 if self.recognizer:
-                    try:
-                        with sr.Microphone() as mic:
-                            audio = self.recognizer.listen(mic, timeout=8, phrase_time_limit=10)
-                        user_text = self.recognizer.recognize_google(audio)
-                        self.logger.info(f"You said: {user_text}")
-                    except Exception:
-                        pass
+                    with sr.Microphone() as mic:
+                        self.logger.info(f"Listening: timeout={self.listen_timeout}s, phrase_time_limit={self.phrase_limit}s")
+                        audio = self.recognizer.listen(mic, timeout=self.listen_timeout, phrase_time_limit=self.phrase_limit)
+                    user_text = self.recognizer.recognize_google(audio)
+                    self.logger.info(f"You said: {user_text}")
 
                 if not user_text:
                     user_text = input("Type here: ").strip()
@@ -265,9 +264,16 @@ class Oli4v4Demo(SICApplication):
                     gesture=gesture
                 )
 
-                # END SCENE on keyword
                 if stopword in user_text.lower():
-                    self.speak("Okay, moving on.")
+                    self.logger.info("Moving on to next scene")
+
+                    # --- FIX: stop tracking completely ---
+                    try:
+                        self.nao.tracker.request(StopAllTrackRequest())
+                        self.nao.tracker.request(RemoveTargetRequest(target_name))
+                    except:
+                        pass
+
                     break
 
             except KeyboardInterrupt:
@@ -299,7 +305,7 @@ class Oli4v4Demo(SICApplication):
             self.nao.tracker.request(
                 StartTrackRequest(
                     target_name="Face",
-                    size=0.1,
+                    size=0.2,
                     mode="Move",           # <-- walking behavior
                     effector="None",
                     move_rel_position=move_rel_position
@@ -317,28 +323,25 @@ class Oli4v4Demo(SICApplication):
             self.logger.info("[BREAK] Listening for stopword…")
 
             text = None
+            user_text = None
             if self.recognizer:
-                try:
-                    with sr.Microphone() as mic:
-                        audio = self.recognizer.listen(mic, timeout=8, phrase_time_limit=10)
-                    text = self.recognizer.recognize_google(audio)
-                except Exception:
-                    pass
+                with sr.Microphone() as mic:
+                    self.logger.info(f"Listening: timeout={self.listen_timeout}s, phrase_time_limit={self.phrase_limit}s")
+                    audio = self.recognizer.listen(mic, timeout=self.listen_timeout, phrase_time_limit=self.phrase_limit)
+                user_text = self.recognizer.recognize_google(audio)
+                self.logger.info(f"You said: {user_text}")
 
-            if not text:
-                try:
-                    text = input("(break) Type here: ").strip()
-                except:
-                    text = None
+            if not user_text:
+                user_text = input("Type here: ").strip()
 
-            if not text:
+            if not user_text:
                 continue
 
             self.logger.info(f"[BREAK] Heard: {text}")
 
             # ---- STOPWORD detected → end break ----
             if stopword in text.lower():
-                self.speak("Okay, let's continue.")
+                self.logger.info("Continuing to next scene")
                 break
 
         # -----------------------
@@ -413,7 +416,7 @@ class Oli4v4Demo(SICApplication):
             # --------------------
             self.logger.info("Scene 3: Short-tempered")
             if self.nao:
-                self.nao.motion.request(NaoPostureRequest("Stand", 0.5))
+                self.nao.motion.request(NaoPostureRequest("Sit", 0.5))
             self.run_scene("sc_shorttemper", self.gesture_sitting, self.gesture_colors_sitting)
 
             # --------------------
@@ -446,17 +449,17 @@ class Oli4v4Demo(SICApplication):
             # Unregister target face
             self.logger.info("Stopping face tracking...")
             self.nao.tracker.request(RemoveTargetRequest(target_name))
-            
+
             # Stop tracking everything
             self.logger.info("Stopping all tracking...")
             self.nao.tracker.request(StopAllTrackRequest())
 
             self.nao.leds.request(NaoLEDRequest("ChestLeds", True))
 
-            self.nao.motion.request(NaoPostureRequest("Stand", 0.5))
-
+            # request rest (no stand right before it)
             self.nao.autonomous.request(NaoRestRequest())
             self.shutdown()
+
 
         finally:
             if self.nao:
@@ -468,12 +471,18 @@ class Oli4v4Demo(SICApplication):
                 self.logger.info("Stopping all tracking...")
                 self.nao.tracker.request(StopAllTrackRequest())
 
+                # turn chest LEDs on (or off as needed)
                 self.nao.leds.request(NaoLEDRequest("ChestLeds", True))
 
-                self.nao.motion.request(NaoPostureRequest("Stand", 0.5))
+                # Request rest (do not call Stand immediately before Rest)
+                try:
+                    self.logger.info("Requesting autonomous rest...")
+                    self.nao.autonomous.request(NaoRestRequest())
+                except Exception as e:
+                    self.logger.warning(f"Failed to request rest: {e}")
 
-                self.nao.autonomous.request(NaoRestRequest())
             self.shutdown()
+
 
 if __name__ == "__main__":
     demo = Oli4v4Demo()

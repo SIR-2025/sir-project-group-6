@@ -1,58 +1,82 @@
+
 # SIR-project Group-6: Oli-4
 
-This project runs a NAO robot demo with **Gemini LLM**, **gesture classification**, and **speech output**. The system has three main components:
+This project runs a **NAO robot demo** with:
+
+* **Gemini LLM** – for conversational responses
+* **Gesture classification** – using a lightweight zero-shot model
+* **Speech output** – via NAO’s TTS system
+
+The system consists of three main components:
 
 1. **Redis** – message broker
-2. **GestureAPI** – Gesture classification using a lightweight version of Bert
+2. **GestureAPI** – gesture classification
 3. **main.py** – NAO interaction script
 
 ---
 
-## 1. Conda Setup
+## 1. Quick Start (Recommended)
 
-This setup uses **`env_sic`** and the provided batch file.
+We provide a **batch file** to automatically start everything in the correct order using a local Python venv.
 
-1. Open terminal at the project root (`sir-project-group-6/`)
-2. Run:
+### Step 1: Install dependencies and create venv
+
+After cloning the repository, run:
+
+```bash
+python install.py
+```
+
+**What this does:**
+
+* Creates a local `venv/` in the project root
+* Installs all required Python packages
+* Downloads or initializes the gesture model for `GestureAPI`
+
+> After this step, the environment is ready to run.
+
+---
+
+### Step 2: Start everything
+
+From the project root (`sir-project-group-6/`), run:
 
 ```bat
 start_all.bat
 ```
 
-**What it does:**
+**This will:**
 
-* Starts Redis (`redis-server.exe redis.conf`) in a new terminal
-* Starts GestureAPI in `oli-4/config` (conda env activated)
-* Waits ~25s to ensure services are up
-* Starts `main.py` in `oli-4` (conda env activated)
-
----
-
-## 2. Manual Environment Setup (alternative)
-
-If you prefer not to use the batch file or want to use a different type of env:
-
-### 2.1. Create environment
-
-**Conda:**
-
-```bash
-conda create -n env_sic python=3.10
-conda activate env_sic
-pip install -r requirements.txt
-```
-
-**Or venv:**
-
-```bash
-python -m venv env_sic
-env_sic\Scripts\activate
-pip install -r requirements.txt
-```
+1. Start Redis (`redis-server.exe redis.conf`) in a new terminal
+2. Start `GestureAPI` from the project root (venv activated automatically)
+3. Wait ~25s for services to initialize
+4. Start `main.py` (NAO demo) in the venv
 
 ---
 
-### 2.2. Start Redis
+## 2. Manual Setup (Alternative)
+
+If you want to set up the environment manually instead of using `install.py`:
+
+### 2.1. Create a Python venv
+
+```bash
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+### 2.2. Initialize GestureAPI model
+
+From the project root:
+
+```bash
+python run_GestureAPI.py
+```
+
+> This will download or load the gesture model in `local_model/`.
+
+### 2.3. Start Redis
 
 From `conf/redis`:
 
@@ -60,21 +84,11 @@ From `conf/redis`:
 redis-server.exe redis.conf
 ```
 
----
-
-### 2.3. Start GestureAPI
-
-```bash
-cd oli-4\config
-python run_GestureAPI.py
-```
-
----
-
 ### 2.4. Start main.py
 
+From the project root:
+
 ```bash
-cd ..
 python main.py
 ```
 
@@ -82,25 +96,12 @@ python main.py
 
 ---
 
-## `oli-4` Folder Structure
+## 3. Notes
 
-The `oli-4` folder contains all new code developed for this project, separate from the original **sir-project template**. Its structure is:
-
-* **`main.py`** – Demo script showcasing the current state of the robot interaction and implemented design features
-* **`tests/`** – Scripts to test specific functionalities independently
-* **`func/`** – Implementation scripts for individual functionalities (e.g., gesture classification)
-* **`logs/`** – Log files generated during runs
-* **`config/`** – Configuration files, including GestureAPI setup and other parameters
-
-This structure helps distinguish the custom code from the template and keeps the project organized.
-
----
-
-## Notes
-
-* **Batch file** simplifies the process and ensures the correct environment is activated
-* Make sure your NAO robot is network-accessible for `main.py`
-* Make sure you are connected to the same network as the Nao and not using a VPN
-* Sometimes firewall can interfere with the connection with the Nao.
+* **Ports:** GestureAPI default: `8001`, Redis default: `6379`
+* The **batch file** ensures correct environment activation and execution order
+* Your NAO robot must be **network-accessible** from your PC
+* Ensure the PC and NAO are on the **same network** (VPNs may block connections)
+* Firewalls can sometimes interfere with NAO communication
 
 ---

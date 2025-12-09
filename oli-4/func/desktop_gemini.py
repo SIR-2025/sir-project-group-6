@@ -4,18 +4,12 @@ from sic_framework.core import sic_logging
 
 # Import the device(s) we will be using
 from sic_framework.devices.desktop import Desktop
-# Import the device(s) we will be using
-from sic_framework.devices import Nao
-from sic_framework.devices.nao import NaoqiTextToSpeechRequest
 
 import google.generativeai as genai
+import speech_recognition as sr
 
 # Import libraries necessary for the demo
-import json
 from os.path import abspath, join
-import numpy as np
-
-import speech_recognition as sr
 
 class GeminiDemo(SICApplication):
     """
@@ -26,38 +20,35 @@ class GeminiDemo(SICApplication):
        How to get a key? See https://aistudio.google.com/api-keys
        Save the key in config/api_key.txt
 
-    3. The Conversational Agents service needs to be running:
+    2. The Conversational Agents service needs to be running:
        - pip install google-generativeai
        - pip install SpeechRecognition
        - You may need to turn of your firewall. 
-
-    Note: This uses the newer Dialogflow CX API (v3), which is different from the older Dialogflow ES (v2).
     """
     
     def __init__(self):
-        # Call parent constructor (handles singleton initialization)
+        """
+            Initialises NAO robot connection, Gemini configuration, microphone and TTS.
+        """
+        # Call parent constructor (handles singleton initialisation)
         super(GeminiDemo, self).__init__()
         
-        # Demo-specific initialization
+        # Demo-specific initialisation
         self.desktop = None
         self.desktop_mic = None
         self.gemini_agent = None
-        self.gemini_keyfile_path = abspath(join("..", "config", "api_key_marit.txt"))
-
+        self.gemini_keyfile_path = abspath(join("..", "config", "api_key.txt"))
 
         self.set_log_level(sic_logging.INFO)
-
-        # Random session ID is necessary for Dialogflow CX
-        self.session_id = np.random.randint(10000)
         
-        # Log files will only be written if set_log_file is called. Must be a valid full path to a directory.
-        # self.set_log_file("/Users/apple/Desktop/SAIL/SIC_Development/sic_applications/demos/desktop/logs")
         self.recognizer = None
         self.tts_engine = None
         self.setup()
     
     def ask_gemini(self, message):
-        """Take input text, send it to Gemini, return (and speak) the reply."""
+        """
+            Takes the input text, sends it to gemini and gives a reply.
+        """        
         if not message:
             return None
 
@@ -70,12 +61,21 @@ class GeminiDemo(SICApplication):
             # Use the model configured on the object, or fall back
             model_name = getattr(self, "gemini_model", "gemini-2.5-flash")
             model = genai.GenerativeModel(model_name, 
-                                          system_instruction="""You are a sarcastic and witty comedian, with a dry sense of humor. 
-                                                                You are doing a sketch with another comedian. Keep your answers SHORT and entertaining, 
-                                                                and make sure the other comedian can respond. Be funny and use playful humor.""")
+                                          system_instruction="""You are a comedian in an improv comedy show. You play a specialist that is being interviewed about your specialty.
+                                                                You will be given a specialty.
+                                                                You are slightly sarcastic and witty, with a dry sense of humor. 
+                                                                You talk in easy English, don't use complicated words.
+                                                                You will play out the scene with another comedian, who portrays the journalist. 
+                                                                Make sure you stay in character as a specialist in your field. Really embrace the specialty you have been given and speak from experience.
+                                                                Make your answers funny and engaging.
+                                                                Make sure that a nice dialogue can happen between you and the other comedian.
+                                                                """)
             response = model.generate_content(text)
 
             reply = response.text.strip() if hasattr(response, "text") else str(response)
+        
+
+        # Handle exceptions
         except Exception as e:
             print(f"[Gemini Error] {e}")
             reply = None
@@ -91,25 +91,26 @@ class GeminiDemo(SICApplication):
 
 
     def setup(self):
-        """Initialize and configure the desktop microphone and Conversational Agents service."""
-        self.logger.info("Initializing Desktop microphone")
+        """
+            Initialise and configure NAO robot and Gemini.
+        """
+        self.logger.info("Initialising Desktop microphone")
         
         # Local desktop setup
         self.desktop = Desktop()
         self.desktop_mic = self.desktop.mic
         
-        # Initialize laptop microphone recognizer
+        # Initialise laptop microphone recogniser
         try:
             self.recognizer = sr.Recognizer()
-            # optional: adjust for ambient noise
             with sr.Microphone() as mic:
                 self.recognizer.adjust_for_ambient_noise(mic, duration=0.5)
-            self.logger.info("Laptop microphone (SpeechRecognition) initialized.")
+            self.logger.info("Laptop microphone (SpeechRecognition) initialised.")
         except Exception as e:
-            self.logger.warning("Could not initialize laptop microphone: {}".format(e))
+            self.logger.warning("Could not initialise laptop microphone: {}".format(e))
             self.recognizer = None
 
-        self.logger.info("Initializing Conversational Agents (Gemini)...")
+        self.logger.info("Initialising Gemini...")
         
         with open(self.gemini_keyfile_path) as f:
             api_key = f.read().strip()
@@ -117,25 +118,28 @@ class GeminiDemo(SICApplication):
         # Configure Gemini with the key
         genai.configure(api_key=api_key)
 
-        self.gemini_model = "gemini-2.5-flash"
-        
+        self.logger.info("Gemini configured successfully")
+
     
     def run(self):
-        """Main application loop."""
-        
+        """
+            Run the main application loop.
+        """        
         try:
-            # Demo starts
             self.logger.info(" -- Ready -- ")
 
             while not self.shutdown_event.is_set():
-                self.logger.info(" ----- Conversation turn")
+                self.logger.info(" ----- Your turn to talk!")
 
+                # Listen for user input 
                 if self.recognizer:
                     try:
                         with sr.Microphone() as mic:
+                            self.logger.info("Listening...")
                             audio = self.recognizer.listen(mic, timeout=8, phrase_time_limit=10)
                         user_text = self.recognizer.recognize_google(audio)
-                        self.logger.info("ASR (laptop mic) result: {}".format(user_text))
+                        self.logger.info("User: {}".format(user_text))
+                    # Raise exceptions for timeout and unrecognised speech
                     except sr.WaitTimeoutError:
                         self.logger.info("Listening timed out, no speech detected.")
                         user_text = None
@@ -146,30 +150,27 @@ class GeminiDemo(SICApplication):
                         self.logger.warning("Laptop mic ASR error: {}".format(e))
                         user_text = None
 
+                # If no speech recognised, fallback to text input
                 if not user_text:
                     try:
                         user_text = input("You: ").strip()
                     except EOFError:
                         self.logger.info("Input stream closed, exiting.")
                         break
-
                 if not user_text:
                     self.logger.info("No input received, continuing...")
                     continue
 
                 # Send to Gemini
-                self.logger.info("Sending to Gemini: {}".format(user_text))
                 gemini_reply = self.ask_gemini(user_text)
-                self.logger.info("Gemini reply: {}".format(gemini_reply))
 
-                #############3 is dit belangrijk???
-                # Speak reply on laptop speaker via pyttsx3
-                """if self.tts_engine:
-                    try:
-                        self.nao.tts.request(NaoqiTextToSpeechRequest(gemini_reply))
-                    except Exception as e:
-                        self.logger.warning("Local TTS playback failed: {}".format(e))"""
-
+                # Write the Gemini reply
+                if gemini_reply:
+                    self.logger.info("Gemini: {}".format(gemini_reply))
+                else:
+                    self.logger.warning("Gemini returned no reply")
+        
+        # Stop on keyboard interrupt
         except KeyboardInterrupt:
             self.logger.info("Demo interrupted by user")
         except Exception as e:

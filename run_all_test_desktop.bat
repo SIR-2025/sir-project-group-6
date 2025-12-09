@@ -33,9 +33,9 @@ timeout /t 25 /nobreak >nul
 echo Continuing...
 
 REM ====== STEP 3: START main.py IN LOCAL venv ======
-echo [3/3] Starting main.py (local venv)...
+echo [3/3] Starting oli4v4_desktop.py (local venv)...
 call "%VENV_ACTIVATE%"
 cd /d "%ROOT_DIR%oli-4"
-python main.py
+python oli4v4_desktop.py
 
 pause

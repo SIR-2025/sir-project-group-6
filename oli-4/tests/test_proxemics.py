@@ -1,0 +1,116 @@
+from sic_framework.core.sic_application import SICApplication
+from sic_framework.core import sic_logging
+
+from sic_framework.devices import Nao
+from sic_framework.devices.common_naoqi.naoqi_stiffness import Stiffness
+from sic_framework.devices.common_naoqi.naoqi_tracker import StartTrackRequest, StopAllTrackRequest
+from sic_framework.devices.common_naoqi.naoqi_motion import NaoqiMoveRequest, NaoqiMoveToRequest
+import time
+
+
+class NaoFaceProxemics(SICApplication):
+
+    def __init__(self):
+        super().__init__()
+        self.nao_ip = "10.0.0.212"
+        self.nao = None
+        self.last_tracker_state = None #states?! (geen states gevodnen in nao)
+
+        self.setup()
+
+    def setup(self):
+        self.logger.info("Start NAO-proxemics test")
+        self.nao = Nao(ip=self.nao_ip)
+        #asynchrone updates?---
+        def on_tracker_update(state):
+            self.last_tracker_state = state  
+
+    def run(self):
+        try:
+            self.logger.info("Enabling head stiffness")
+            self.nao.stiffness.request(Stiffness(stiffness=1.0, joints=["Head"]))
+
+            # Start face tracking (head only)
+            self.logger.info("Starting face tracking…")
+            self.nao.tracker.request(
+                StartTrackRequest(
+                    target_name="Face",
+                    size=0.2,
+                    mode="Head",
+                    effector="None"
+                )
+            )
+
+            time.sleep(0.2)
+            self.logger.info("Entering proxemics loop…")
+
+            while not self.shutdown_event.is_set():
+                state = self.last_tracker_state #state hier
+
+                # NO FACE DETECTED: rotate for a moment to search
+                if state is None:
+                    self.nao.motion.request(NaoqiMoveRequest(0.0, 0.0, 0.3))  # rotate left, maybe random? (or try to make it line the face up in the center first, but check first how it interacts with the gaze function)
+                    time.sleep(0.3)                                          # rotate for x seconds
+                    self.nao.motion.request(NaoqiMoveRequest(0.0, 0.0, 0.0)) # stop rotation
+                    time.sleep(0.1)  # pause before checking again
+                    continue
+
+                #face detected, get values
+                size = state.w       # basically distance, although face size could matter
+                alpha = state.alpha  # horizontal offset. Maybe use it to center later
+
+                # FORWARD / BACKWARD BASED ON DISTANCE
+
+                if size < 0.15:
+                    # Far: move forward (negative X) (pauses by himself, if not mistaken, else uncomment the two lines after)
+                    self.nao.motion.request(NaoqiMoveToRequest(+0.10, 0.0, 0.0))
+                    #time.sleep(0.1)  #hoe lang je stapt (draait bij z)
+                    #self.nao.motion.request(NaoqiMoveRequest(0.0, 0.0, 0.0))
+                elif size > 0.30:
+                    # Too close: move backward
+                    self.nao.motion.request(NaoqiMoveToRequest(-0.10, 0.0, 0.0))
+                    #time.sleep(0.1)  #hoe lang je stapt (draait bij z)
+                    #self.nao.motion.request(NaoqiMoveRequest(0.0, 0.0, 0.0))
+
+                else:
+                    # Good distance :stop forward/backward movement
+                    self.nao.motion.request(NaoqiMoveRequest(0, 0, 0))
+
+                # SIDE-TO-SIDE BASED ON ANGLE (speed-based, timed) (do the z to turn around it in its place)
+                if alpha > 0.3:
+                    # Face left: move right (negative Y)
+                    self.nao.motion.request(NaoqiMoveRequest(0.0, 0, -0.3))
+                    time.sleep(0.1)  #hoe lang je stapt (draait bij z)
+                    self.nao.motion.request(NaoqiMoveRequest(0.0, 0.0, 0.0))
+                elif alpha > 0.15:
+                    # Face left: move right (negative Y)
+                    self.nao.motion.request(NaoqiMoveRequest(0.0, 0, -0.15))
+                    time.sleep(0.1)  #hoe lang je stapt
+                    self.nao.motion.request(NaoqiMoveRequest(0.0, 0.0, 0.0))
+
+                elif alpha < -0.3:
+                    # Face right: move left (positive Y)
+                    self.nao.motion.request(NaoqiMoveRequest(0.0, 0, 0.3))
+                    time.sleep(0.1)  # #hoe lang je stapt
+                    self.nao.motion.request(NaoqiMoveRequest(0.0, 0.0, 0.0))
+                elif alpha < -0.15:
+                    # Face right: move left (positive Y)
+                    self.nao.motion.request(NaoqiMoveRequest(0.0, 0, 0.15))
+                    time.sleep(0.1)  # #hoe lang je stapt
+                    self.nao.motion.request(NaoqiMoveRequest(0.0, 0.0, 0.0))
+                else:
+                    # Perfectly centered: make sure sideways motion is stopped
+                    self.nao.motion.request(NaoqiMoveRequest(0, 0, 0))
+
+        except Exception as e:
+            self.logger.error(f"Error: {e}")
+
+        finally:
+            self.logger.info("Stopping tracking…")
+            self.nao.tracker.request(StopAllTrackRequest())
+            self.shutdown()
+
+
+if __name__ == "__main__":
+    demo = NaoFaceProxemics()
+    demo.run()

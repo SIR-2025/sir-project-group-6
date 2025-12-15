@@ -33,7 +33,7 @@ python install.py
 * Installs all required Python packages
 * Downloads or initializes the gesture model for `GestureAPI`
 
-> After this step, follow the instructions in step 2.3 for placing your dialogflow and API keys in the right location. Also edit the values labeled with TODO in oli-4/main.py to the values from your dialogflow setup.
+After this step, follow the instructions in step 2.4 for placing your dialogflow and API keys in the right location. Also edit the values labeled with TODO in oli-4/main.py to the values from your dialogflow setup.
 
 > Now the environment is ready to run.
 

@@ -37,8 +37,6 @@ python install.py
 
 > Now the environment is ready to run.
 
----
-
 ### Step 2: Start everything
 
 From the project root (`sir-project-group-6/`), run:
@@ -88,16 +86,12 @@ redis-server.exe redis.conf
 
 > Ensure Redis and GestureAPI are running first.
 
----
-
 ## 2.3. API Credentials Setup (Required)
 
 After installing the virtual environment and initializing the GestureAPI model,
 you must provide credentials for **Google Dialogflow** and **Gemini LLM**.
 
 These credentials are **not included** in the repository.
-
----
 
 ### 2.3.1. Google Dialogflow Credentials (Speech-to-Text)
 
@@ -121,8 +115,6 @@ oli-4/config/google-key.json
 > This file is used by `main.py` to authenticate with Google Dialogflow for
 > streaming speech-to-text.
 
----
-
 ### 2.3.2. Gemini API Key (Language Model)
 
 1. Create a **Gemini API key** via Google AI Studio.
@@ -145,7 +137,6 @@ oli-4/config/api_key.txt
 
 > This key is used by `main.py` to access the Gemini large language model.
 
----
 ### 2.4. Start main.py
 
 From the project root:
@@ -189,8 +180,6 @@ The demo is organized into **multiple scenes**, each defining a different intera
 
 Scene prompts, stop-words, and behavior are defined in external configuration files.
 
----
-
 ### 4.2. Speech Input and Output
 
 **Speech-to-Text (STT)**
@@ -205,8 +194,6 @@ Scene prompts, stop-words, and behavior are defined in external configuration fi
 * Generated responses are spoken using NAO’s built-in TTS system
 * If TTS fails, the text is printed to the console for debugging
 
----
-
 ### 4.3. Language Generation (Gemini LLM)
 
 * The script maintains a **conversation history** per scene
@@ -218,8 +205,6 @@ Scene prompts, stop-words, and behavior are defined in external configuration fi
   * Used as input for gesture classification
   * Logged for later analysis
 
----
-
 ### 4.4. Gesture Classification and Execution
 
 * LLM responses are sent to the **GestureAPI**
@@ -230,8 +215,6 @@ Scene prompts, stop-words, and behavior are defined in external configuration fi
 
   * Standing
   * Sitting
-
----
 
 ### 4.5. LED-Based System State Feedback
 
@@ -246,15 +229,11 @@ The NAO’s LEDs are used to visualize internal system states in real time:
 
 This provides immediate feedback during live demos and debugging.
 
----
-
 ### 4.6. Face Tracking and Movement
 
 * During conversational scenes, the NAO tracks the user’s face using head movement
 * During break scenes, tracking switches to a **movement mode**, allowing the robot to walk and follow the user
 * Tracking is safely stopped and reset between scenes and on shutdown
-
----
 
 ### 4.7. Data Logging
 
@@ -269,8 +248,6 @@ Each interaction turn is logged to a JSONL file, including:
 * Selected gesture category and animation
 
 This enables **offline analysis of system performance and interaction quality**.
-
----
 
 ### 4.8. Robustness and Safety Features
 

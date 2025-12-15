@@ -1,16 +1,20 @@
+# General imports
 import time
 import json
 import threading
 import google.generativeai as genai
 import os
+import pyaudio
+from google.cloud import dialogflow_v2 as dialogflow
+from google.oauth2 import service_account
+from os.path import abspath, join
 
-# Gesture functions
+# Import our own created gesture functions
 from func.gesture import classify_gesture_api, select_gesture
 
 # SIC framework
 from sic_framework.core.sic_application import SICApplication
 from sic_framework.core import sic_logging
-
 from sic_framework.devices import Nao
 from sic_framework.devices.nao import NaoqiTextToSpeechRequest
 from sic_framework.devices.common_naoqi.naoqi_motion import (
@@ -19,15 +23,10 @@ from sic_framework.devices.common_naoqi.naoqi_motion import (
 )
 from sic_framework.devices.common_naoqi.naoqi_autonomous import NaoRestRequest
 from sic_framework.devices.common_naoqi.naoqi_leds import NaoLEDRequest
-
-from os.path import abspath, join
-
 from sic_framework.devices.common_naoqi.naoqi_leds import (
     NaoFadeRGBRequest,
     NaoLEDRequest,
 )
-
-# Import message types and requests
 from sic_framework.devices.common_naoqi.naoqi_stiffness import Stiffness
 from sic_framework.devices.common_naoqi.naoqi_tracker import (
     RemoveTargetRequest,
@@ -35,50 +34,76 @@ from sic_framework.devices.common_naoqi.naoqi_tracker import (
     StopAllTrackRequest,
 )
 
-import pyaudio
-from google.cloud import dialogflow_v2 as dialogflow
-from google.oauth2 import service_account
-
 class Oli4v4Demo(SICApplication):
+    """
+    Oli4v4 Improvisational Comedy Demo for NAO Robot
+
+    This module implements a full interactive improvisational comedy demo using
+    a NAO robot. The system integrates:
+
+    - Speech-to-text via Google Dialogflow (streaming STT)
+    - Large Language Model responses via Google Gemini
+    - Emotion/action classification using deberta-v3
+    - Corresponding gesture selection/execution and Eye-LEDs color
+    - Chest LED feedback for system state visualization
+    - Face tracking and movement behaviors
+    - Scene-based interaction structure with break phases
+    - Detailed interaction logging for post-analysis
+    """
+
     def __init__(self):
+        """
+        Initialize configuration, load resources, and prepare the demo.
+
+        Responsibilities:
+        - Configure logging
+        - Load gesture definitions, scene prompts, and LED color mappings
+        - Configure Gemini and Dialogflow credentials
+        - Prepare interaction logging
+        - Initialize NAO-related configuration
+        """
+
         super(Oli4v4Demo, self).__init__()
 
         self.set_log_level(sic_logging.INFO)
 
         # NAO
-        self.nao_ip = "10.15.2.177"
+        self.nao_ip = "192.168.0.231" #TODO: Change IP to Nao's current IP
         self.nao = None
 
-        # Gesture dictionary
+        # Load gesture dictionary
         with open("config/gestures.json", "r") as f:
             gestures_raw = json.load(f)
         self.gesture_sitting = gestures_raw["sitting"]
         self.gesture_standing = gestures_raw["standing"]
 
+        # Load scene configurations
         with open("config/scenes.json", "r") as f:
             self.scene_prompts = json.load(f)
 
+        # Load eyecolor ditionary
         with open("config/eyecolors.json", "r") as f:
             gesture_colors = json.load(f)
         self.gesture_colors_sitting = gesture_colors["sitting"]
         self.gesture_colors_standing = gesture_colors["standing"]
 
-        # Speech & LLM
+        # Initialize LLM
         self.gemini_model = "gemini-2.5-flash"
+        #TODO: Put gemini API key as txt in this location
         self.api_key_path = abspath(join("config", "api_key.txt"))
 
         # Setup logging to file for analysis
         logs_folder = abspath("logs")
         os.makedirs(logs_folder, exist_ok=True)
         self.data_log_path = os.path.join(logs_folder, f"interaction_log_nao{int(time.time())}.jsonl")
-
         self.logger.info(f"Data log will be saved to: {self.data_log_path}")
 
-        # === Dialogflow STT ===
-        self.google_keyfile = "config/google-key.json"
+        # Initialize Dialogflow for speech
+        self.google_keyfile = "config/google-key.json" #TODO: put your dialogflow keyfile at this location
         self.language_code = "en-US"
         self.sample_rate = 16000
         self.chunk = int(self.sample_rate / 10)
+        #TODO: Change following values if you use your own dialogflow setup
         self.project_id = "oli-4-ee9p"
         self.location = "global"
         self.agent_id = "a7442d7b-fef8-4837-a27d-d29a1b4c8c27"
@@ -89,6 +114,15 @@ class Oli4v4Demo(SICApplication):
         self.setup()
 
     def setup(self):
+        """
+        Perform runtime setup
+
+        This includes:
+        - Connecting to the NAO robot
+        - Configuring the Gemini API
+        - Initializing Dialogflow credentials and session
+        """
+        # Initializing connection with Nao
         self.logger.info("Initializing NAO...")
         try:
             self.nao = Nao(ip=self.nao_ip)
@@ -96,12 +130,12 @@ class Oli4v4Demo(SICApplication):
             self.logger.warning(f"NAO connection failed: {e}")
             self.nao = None
 
-        # Gemini API
+        # Setup Gemini API
         with open(self.api_key_path) as f:
             key = f.read().strip()
         genai.configure(api_key=key)
 
-        # Dialogflow credentials
+        # Setup Dialogflow credentials
         self.df_credentials = service_account.Credentials.from_service_account_file(
             self.google_keyfile
         )
@@ -114,17 +148,22 @@ class Oli4v4Demo(SICApplication):
         self.df_client = dialogflow.SessionsClient(credentials=self.df_credentials)
 
     def df_mic_stream(self):
-        """Yields 16000 Hz 16-bit mono audio chunks from local PC mic."""
+        """
+        Generator yielding raw audio chunks from the local microphone.
+        Audio format: 16-bit linear PCM Mono with 16 kHz sample rate
+        Used as input for Dialogflow streaming speech-to-text.
+        """
         pa = pyaudio.PyAudio()
         stream = pa.open(
             format=pyaudio.paInt16,
             channels=1,
             rate=self.sample_rate,
             input=True,
-            frames_per_buffer=self.chunk,
+            input_device_index=1,
+            frames_per_buffer=self.chunk
         )
 
-        print("🎤 Speak now...")
+        print("Speak now...")
 
         try:
             while True:
@@ -134,8 +173,19 @@ class Oli4v4Demo(SICApplication):
             stream.close()
             pa.terminate()
 
-    # Gemini LLM call
     def ask_gemini(self, messages):
+        """
+        Query the Gemini LLM with the current conversation history.
+
+        Args:
+            messages (list[dict]):
+                Conversation history in the format:
+                [{"role": "user"|"model", "content": str}, ...]
+
+        Returns:
+            str:
+                Generated text response from Gemini, or ``None`` if an error occurs.
+        """
         try:
             model = genai.GenerativeModel(self.gemini_model)
 
@@ -156,14 +206,16 @@ class Oli4v4Demo(SICApplication):
         
     def streaming_stt(self):
         """
-        Single-turn Dialogflow STT.
-        Prints interim results and returns a final transcript.
+        Perform a single-turn streaming speech-to-text interaction.
+
+        Uses Dialogflow streaming recognition to:
+        - Print interim transcription results
+        - Return the final recognized text once speech ends
+
+        Returns:
+            str:
+                Final recognized user utterance, or None if failed.
         """
-        # NAO LED: Listening (blue)
-        try:
-            self.nao.leds.request(NaoFadeRGBRequest("ChestLeds", 0, 0, 1, 0))
-        except:
-            pass
 
         # Build audio config request
         query_input = dialogflow.QueryInput(
@@ -198,7 +250,7 @@ class Oli4v4Demo(SICApplication):
                 result = response.recognition_result
                 txt = result.transcript
 
-                # Handle interim + clear old lines reliably
+                # Handle interim + clear old lines
                 if not result.is_final:
                     print("\r" + " " * len(last_print), end="\r")
                     text_out = f"[Interim] {txt}"
@@ -216,6 +268,12 @@ class Oli4v4Demo(SICApplication):
     
     # Speak
     def speak(self, text):
+        """
+        Speak text using NAO's text-to-speech system. Falls back to printing text if NAO TTS fails.
+
+        Args:
+            text (str): Text to be spoken.
+        """
         if not text:
             return
         try:
@@ -225,7 +283,17 @@ class Oli4v4Demo(SICApplication):
             print(text)
 
     def log_interaction(self, scene_id, user_text, reply, gemini_time, classifier_time, category, gesture):
-        """Write a single interaction to the JSONL log file."""
+        """
+        Log a single interaction turn to a JSONL file.
+
+        Stored fields include:
+        - Timestamps
+        - Scene identifier
+        - User input
+        - LLM output
+        - Timing metrics
+        - Gesture classification results
+        """
         entry = {
             "timestamp": time.time(),
             "scene_id": scene_id,
@@ -240,6 +308,24 @@ class Oli4v4Demo(SICApplication):
             f.write(json.dumps(entry) + "\n")
     
     def run_scene(self, scene_id, gestures, gesture_colors):
+        """
+        Run a conversational improvisation scene.
+
+        Scene behavior:
+        - Continuous loop of:
+            - User speech input
+            - LLM response generation
+            - Gesture classification
+            - Concurrent speech + animation execution
+        - Face tracking is enabled (head only)
+        - Scene ends when a predefined stopword is detected (set in scene config)
+
+        Args:
+            scene_id (str): Scene identifier key from scenes.json
+            gestures (dict): Available gestures for this scene posture (stand or sit)
+            gesture_colors (dict): LED colors mapped to gesture categories
+        """
+        # Initialize scene, conversation history and tracking
         system_prompt = self.scene_prompts[scene_id]["prompt"]
         stopword = self.scene_prompts[scene_id]["stopword"]
         labels = list(gestures.keys())
@@ -249,7 +335,7 @@ class Oli4v4Demo(SICApplication):
         ]
 
         target_name = "Face"
-            
+        
         self.logger.info("Enabling head stiffness and starting face tracking...")
         # Enable stiffness so the head joint can be actuated
         self.nao.stiffness.request(Stiffness(stiffness=1.0, joints=["Head"]))
@@ -353,7 +439,7 @@ class Oli4v4Demo(SICApplication):
                     gesture=gesture
                 )
 
-                # END SCENE on keyword
+                # END SCENE when stopword is said
                 if stopword in user_text.lower():
                     self.speak("Okay, moving on.")
                     break
@@ -363,11 +449,16 @@ class Oli4v4Demo(SICApplication):
 
     def run_break_scene(self, scene_id):
         """
-        'Break' scenes:
-        - No LLM
-        - NAO performs face tracking + walking
-        - Keep listening for stopword
-        - Stop when stopword is heard -> break scene ends
+        Run a non-verbal 'break' scene.
+
+        Break scene behavior:
+        - No LLM interaction
+        - NAO performs face tracking with movement (walking)
+        - System continuously listens for a stopword
+        - Scene ends once stopword is detected
+
+        Args:
+            scene_id (str): Scene identifier key from scenes.json (purely used to retrieve stopword)
         """
 
         stopword = self.scene_prompts[scene_id]["stopword"].lower()
@@ -388,7 +479,7 @@ class Oli4v4Demo(SICApplication):
                 StartTrackRequest(
                     target_name="Face",
                     size=0.1,
-                    mode="Move",           # <-- walking behavior
+                    mode="Move",        # walking behavior
                     effector="None",
                     move_rel_position=move_rel_position
                 )
@@ -401,7 +492,7 @@ class Oli4v4Demo(SICApplication):
         # -----------------------
         while not self.shutdown_event.is_set():
 
-            # --- LISTEN ---
+            # LISTEN
             self.logger.info("[BREAK] Listening for stopword…")
             
             light = self.nao.leds.request(NaoFadeRGBRequest("ChestLeds", 0, 0, 1, 0))
@@ -416,8 +507,9 @@ class Oli4v4Demo(SICApplication):
 
             self.logger.info(f"[BREAK] Heard: {user_text}")
 
-            # ---- STOPWORD detected → end break ----
+            # STOPWORD detected, end break
             if stopword in user_text.lower():
+                self.nao.leds.request(NaoFadeRGBRequest("ChestLeds", 0, 1, 0, 0))
                 self.speak("Okay, let's continue.")
                 break
 
@@ -431,10 +523,20 @@ class Oli4v4Demo(SICApplication):
         except Exception:
             pass
 
-    # -------------------------------------------------------
-    # RUN LOOP (changed to wait for gesture THEN speak+gesture)
-    # -------------------------------------------------------
     def run(self):
+        """
+        Main execution of the demo.
+
+        Sequence:
+        - Initialize NAO posture and LEDs
+        - Start with a break scene (waiting for start cue)
+        - Run multiple improvisational scenes with breaks in between
+        - End with a closing speech and bow animation
+
+        Handles:
+        - Shutdown on KeyboardInterrupt
+        - Cleanup of tracking, LEDs, posture, and autonomy state
+        """
         try:
             # Initial NAO setup
             if self.nao:
@@ -448,7 +550,7 @@ class Oli4v4Demo(SICApplication):
                 target_name = "Face"
 
             # --------------------
-            # START
+            # START (Break)
             # --------------------
             # NAO waits for actor to say start word to start with first scene
             self.logger.info("Scene: Start")
@@ -457,7 +559,7 @@ class Oli4v4Demo(SICApplication):
             self.run_break_scene("sc_break")
 
             # --------------------
-            # SCENE 1 (Standing)
+            # SCENE 1: Specialist, Standing
             # --------------------
             self.logger.info("Scene: 1, Specialist")
             if self.nao:
@@ -473,7 +575,7 @@ class Oli4v4Demo(SICApplication):
             self.run_break_scene("sc_break")
 
             # --------------------
-            # SCENE 2 (standing)
+            # SCENE 2: Relationship, Standing
             # --------------------
             self.logger.info("Scene 2: Relation")
             if self.nao:
@@ -489,25 +591,17 @@ class Oli4v4Demo(SICApplication):
             self.run_break_scene("sc_break")
 
             # --------------------
-            # SCENE 3 (sitting)
+            # SCENE 3: Therapist, Sitting
             # --------------------
             self.logger.info("Scene 3: therapist")
             if self.nao:
                 self.nao.motion.request(NaoPostureRequest("Sit", 0.5))
             self.run_scene("sc_therapist", self.gesture_sitting, self.gesture_colors_sitting)
 
-            # # --------------------
-            # # END: Idle: Skipped, takes too long
-            # # --------------------
-            # self.logger.info("Scene: End Idle")
-            # if self.nao:
-            #     self.nao.motion.request(NaoPostureRequest("Stand", 0.5))
-            # self.run_break_scene("sc_break")
-
             # --------------------
             # END: Finish
-            # Oli4 stands up and bows immediately afterwards
             # --------------------
+            # Oli4 stands up and bows immediately afterwards
             self.logger.info("Scene: End Idle")
 
             if self.nao:

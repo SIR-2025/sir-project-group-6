@@ -33,7 +33,9 @@ python install.py
 * Installs all required Python packages
 * Downloads or initializes the gesture model for `GestureAPI`
 
-> After this step, the environment is ready to run.
+> After this step, follow the instructions in step 2.3 for placing your dialogflow and API keys in the right location. Also edit the values labeled with TODO in oli-4/main.py to the values from your dialogflow setup.
+
+> Now the environment is ready to run.
 
 ---
 
@@ -84,6 +86,66 @@ From `conf/redis`:
 redis-server.exe redis.conf
 ```
 
+> Ensure Redis and GestureAPI are running first.
+
+---
+
+## 2.3. API Credentials Setup (Required)
+
+After installing the virtual environment and initializing the GestureAPI model,
+you must provide credentials for **Google Dialogflow** and **Gemini LLM**.
+
+These credentials are **not included** in the repository.
+
+---
+
+### 2.3.1. Google Dialogflow Credentials (Speech-to-Text)
+
+1. Obtain a **Google Cloud service account JSON key** with access to Dialogflow.
+2. Rename the file to:
+
+```
+
+google-key.json
+
+```
+
+3. Place the file in the following directory:
+
+```
+
+oli-4/config/google-key.json
+
+```
+
+> This file is used by `main.py` to authenticate with Google Dialogflow for
+> streaming speech-to-text.
+
+---
+
+### 2.3.2. Gemini API Key (Language Model)
+
+1. Create a **Gemini API key** via Google AI Studio.
+2. Create a text file named:
+
+```
+
+api_key.txt
+
+```
+
+3. Paste **only the API key** into the file (no quotes, no extra spaces).
+4. Place the file in the following directory:
+
+```
+
+oli-4/config/api_key.txt
+
+```
+
+> This key is used by `main.py` to access the Gemini large language model.
+
+---
 ### 2.4. Start main.py
 
 From the project root:
@@ -91,8 +153,6 @@ From the project root:
 ```bash
 python main.py
 ```
-
-> Ensure Redis and GestureAPI are running first.
 
 ---
 

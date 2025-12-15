@@ -105,3 +105,123 @@ python main.py
 * Firewalls can sometimes interfere with NAO communication
 
 ---
+
+## 4. NAO Interaction Script (`main.py`) – Functionality Overview
+
+The `main.py` script is the core controller of the Oli-4 demo.
+It coordinates **speech input, language generation, gesture selection, and physical robot behavior** to create a live improvisational interaction with the NAO robot.
+
+### 4.1. Scene-Based Interaction Structure
+
+The demo is organized into **multiple scenes**, each defining a different interaction mode:
+
+* **Conversational scenes**
+
+  * The NAO listens to the user
+  * Generates a response using the Gemini LLM
+  * Classifies the response into a gesture category
+  * Executes speech and gestures concurrently
+* **Break scenes**
+
+  * No language generation
+  * NAO performs face tracking and movement (walking behavior)
+  * System waits for a spoken stop-word to continue
+
+Scene prompts, stop-words, and behavior are defined in external configuration files.
+
+---
+
+### 4.2. Speech Input and Output
+
+**Speech-to-Text (STT)**
+
+* User speech is captured via a local microphone
+* Google Dialogflow streaming STT is used for real-time transcription
+* Interim and final recognition results are handled
+* Keyboard input is used as a fallback if speech recognition fails
+
+**Text-to-Speech (TTS)**
+
+* Generated responses are spoken using NAO’s built-in TTS system
+* If TTS fails, the text is printed to the console for debugging
+
+---
+
+### 4.3. Language Generation (Gemini LLM)
+
+* The script maintains a **conversation history** per scene
+* A **scene-specific system prompt** defines the role and behavior of the NAO
+* User input is appended to the history and sent to Gemini
+* The model response is:
+
+  * Spoken by the robot
+  * Used as input for gesture classification
+  * Logged for later analysis
+
+---
+
+### 4.4. Gesture Classification and Execution
+
+* LLM responses are sent to the **GestureAPI**
+* A zero-shot classifier assigns the response to a gesture category
+* A concrete NAO animation is selected randomly within that category
+* Speech and gesture execution run **in parallel** using threading
+* Different gesture sets are used depending on whether the robot is:
+
+  * Standing
+  * Sitting
+
+---
+
+### 4.5. LED-Based System State Feedback
+
+The NAO’s LEDs are used to visualize internal system states in real time:
+
+| LED Color | Meaning                        |
+| --------- | ------------------------------ |
+| Blue      | Listening for user input       |
+| Red       | Generating LLM response        |
+| Yellow    | Classifying gesture            |
+| Green     | Speaking and executing gesture |
+
+This provides immediate feedback during live demos and debugging.
+
+---
+
+### 4.6. Face Tracking and Movement
+
+* During conversational scenes, the NAO tracks the user’s face using head movement
+* During break scenes, tracking switches to a **movement mode**, allowing the robot to walk and follow the user
+* Tracking is safely stopped and reset between scenes and on shutdown
+
+---
+
+### 4.7. Data Logging
+
+Each interaction turn is logged to a JSONL file, including:
+
+* Timestamp
+* Scene identifier
+* User utterance
+* LLM response
+* LLM response time
+* Gesture classification time
+* Selected gesture category and animation
+
+This enables **offline analysis of system performance and interaction quality**.
+
+---
+
+### 4.8. Robustness and Safety Features
+
+* Graceful handling of:
+
+  * Speech recognition failures
+  * TTS failures
+  * Keyboard interrupts
+* Automatic cleanup on shutdown:
+
+  * Stops face tracking
+  * Resets posture
+  * Restores autonomous mode
+  * Turns LEDs back to a neutral state
